@@ -5,7 +5,6 @@ import re
 import sys
 import traceback
 import webbrowser
-
 import config
 import util_logging as log
 from PySide2 import QtWidgets, QtCore, QtGui
@@ -277,6 +276,7 @@ class UDemyWebCrawler(QMainWindow):
         Thread._signal_progress.connect(self.OnCourseDownloadProgressChanged)
         Thread._signal_done.connect(self.OnCourseDownloaded)
         Thread._signal_error.connect(self.OnCourseDownloadError)
+        Thread._signal_progress_parts.connect(self.OnPartsDownloaded)
         self.ThreadCancelTrigger = Thread.TriggerCancelDownload
         Thread.start()
         self.BlockUI(True)
@@ -416,6 +416,11 @@ class UDemyWebCrawler(QMainWindow):
     def OnCourseDownloadProgressChanged(self, cnt, idx, max, coursetitle, finishtime):
         self.progressBar.setValue(int(cnt))
         self.progressBar.setFormat(f"{cnt}% [{idx}\\{max}] courses loaded from '{coursetitle}', estimated finish time: {finishtime}")
+
+    def OnPartsDownloaded(self, chapterid, segment, count):
+        processed = int(segment / count * 100)
+        PartsLabel = config.PROGRESSBAR_LABEL_DOWNLOAD_PARTS.format(Chapter_Index=chapterid, segmentid=segment, segmentscount=count, percentdone=processed)
+        self.progressBarLabel.setText(PartsLabel)
 
     def OnCourseDownloaded(self, courseid, coursename):
         self.ThreadCancelTrigger = None

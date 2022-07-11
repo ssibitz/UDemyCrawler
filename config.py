@@ -17,6 +17,7 @@ APP_INIFILE_NAME = f"{APP_NAME}.ini"
 APP_ICON_NAME = f"res\\{APP_NAME}.ico"
 PROGRESSBAR_LABEL_DEFAULT = "Click on course to download."
 PROGRESSBAR_LABEL_DOWNLOAD = "Course will be downloaded. Please wait!"
+PROGRESSBAR_LABEL_DOWNLOAD_PARTS = "Course chapter {Chapter_Index:02d} will be downloaded: Part {segmentid:04d} of {segmentscount:04d} [{percentdone}%]"
 # Download course details
 COURSE_PREVIEW_IMAGE_NAME = "cover.jpg"
 COURSE_DESCRIPTION_FILE_NAME = "description.html"

@@ -14,6 +14,7 @@ from urllib.request import Request, urlopen
 from pprint import pformat
 
 class DownloaderThread(QThread):
+    _signal_progress_parts: Union[Signal, Signal] = Signal(int, int, int)
     _signal_progress: Union[Signal, Signal] = Signal(int, int, int, str, str)
     _signal_done: Union[Signal, Signal] = Signal(int, str)
     _signal_error: Union[Signal, Signal] = Signal(str)
@@ -359,14 +360,18 @@ class DownloaderThread(QThread):
                 segments = m3u8list.segments
                 if not segments is None:
                     # Download all segments
+                    segmentscount = len(m3u8list.segments)
                     segmentid = 0
                     for segment in m3u8list.segments:
+                        if self.canceled:
+                            break
                         segmentid = segmentid + 1
                         Lecture_Download_URL = segment.uri
                         DownloadExt = self.ExtractDownloadExtFromUri(Lecture_Download_URL)
                         DownloadVideoNameSplitted = f"{cnt:04d}-{segmentid:04d}-{Chapter_Index:02d}-{Chapter_Title}-{Lecture_FileName}{DownloadExt}"
                         # Download splitted video part
                         self.DoDownloadVideo(Lecture_Download_TYP, Lecture_Download_URL, DownloadVideoNameSplitted)
+                        self._signal_progress_parts.emit(Chapter_Index, segmentid, segmentscount)
         else:
             self.DoDownloadVideo(Lecture_Download_TYP, Lecture_Download_URL, DownloadVideoName)
 
