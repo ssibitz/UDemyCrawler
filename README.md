@@ -1,6 +1,5 @@
 # UDemyCrawler | Udemy Course Downloader (GUI)
 Udemy crawler for backup courses to local drive and view the videos of the course(s) offline.
-
 A cross platform (Windows, Mac, Linux) desktop application for downloading Udemy Courses.
 
 ### ***Important Note***:
