@@ -1,14 +1,13 @@
 # UDemyCrawler | Udemy Course Downloader (GUI)
 Udemy crawler for backup courses to local drive and view the videos of the course(s) offline.
-
-A cross platform (Windows, Mac, Linux) desktop application for downloading Udemy Courses.
+- A cross platform (Windows, Mac, Linux) desktop application for downloading Udemy Courses.
 
 ### ***Important Note***:
  - Owner of this repository is not responsible for any misuse if you share your credentials with strangers.
 
 ### Warning
 **Udemy has started to encrypt many of the course videos, so downloading them may be impossible/illegal because it involves decrypting DRM'd videos which opens up the author to DMCA takedowns/lawsuits. 
-If you use udemy-dl and some/all videos are skipped, please don't open a new issue or comment that the issue still exists. 
+If you use UDemyCrawler and some/all videos are skipped, please don't open a new issue or comment that the issue still exists. 
 All requests to bypass DRM/encryption will be ignored.**
 
 ### Disclaimer:
