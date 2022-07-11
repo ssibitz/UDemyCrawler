@@ -11,7 +11,7 @@ USR_CONFIG_DOWNLOAD_COURSE_AGAIN = "DownloadCourseVideoAgain"
 USR_CONFIG_DOWNLOAD_COURSE_AGAIN_DEFAULT = False
 # Application
 APP_NAME = "UDemyCrawler"
-APP_TITLE = "UDemy course crawler"
+APP_TITLE = "UDemy course crawler - Copyright(c) 2022 by Stefan Sibitz"
 APP_LOGFILE_NAME = f"{APP_NAME}.log"
 APP_INIFILE_NAME = f"{APP_NAME}.ini"
 APP_ICON_NAME = f"res\\{APP_NAME}.ico"
