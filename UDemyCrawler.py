@@ -1,19 +1,23 @@
 import json
 import os
+import pickle
+import re
 import sys
 import traceback
-from urllib.request import Request, urlopen
-from bs4 import BeautifulSoup
+import webbrowser
 
 import config
 import util_logging as log
 from PySide2 import QtWidgets, QtCore, QtGui
-from PySide2.QtGui import QIcon, QFont, QIntValidator
-from PySide2.QtWidgets import QWidget, QVBoxLayout, QApplication, QHBoxLayout, QPushButton, \
+from PySide2.QtGui import QIcon, QFont
+from PySide2.QtWidgets import QWidget, QVBoxLayout, QApplication, \
     QProgressBar, QLabel, QMainWindow, QAction, QDialog, QDialogButtonBox, QLineEdit, QFormLayout, QMessageBox, \
     QFileDialog, QComboBox, QCheckBox
 from util_downloader import DownloaderThread
 from util_webengine import QWebEngineViewPlus
+from urllib.request import Request, urlopen
+from bs4 import BeautifulSoup
+from pprint import pformat
 
 class UDemyWebCrawlerConfig(QDialog):
     def __init__(self):
@@ -127,38 +131,55 @@ class UDemyWebCrawler(QMainWindow):
 
     def CreateMenu(self):
         mainMenu = self.menuBar()
+
+        #
+        # --- File menu
+        #
         fileMenu = mainMenu.addMenu("File")
-        # Switch user + exit
-        switchAction = QAction("Switch user + Quit application", self)
-        switchAction.setShortcut("Ctrl+U")
-        switchAction.triggered.connect(self.OnSwitchUserClicked)
-        fileMenu.addAction(switchAction)
-        # Reload page
-        restartAction = QAction("Reload my coursess", self)
-        restartAction.setShortcut("Ctrl+Alt+R")
-        restartAction.triggered.connect(self.OnJump2Overview)
-        fileMenu.addAction(restartAction)
-        # Cancel current download
-        cancelDownloadAction = QAction("Cancel current download", self)
-        cancelDownloadAction.setShortcut("Ctrl+Alt+C")
-        cancelDownloadAction.triggered.connect(self.OnCancelDownload)
-        fileMenu.addAction(cancelDownloadAction)
-        # User config
+        # -User configuration
         fileMenu.addSeparator()
-        userConfigAction = QAction("Settings", self)
+        userConfigAction = QAction(QIcon(config.FontAweSomeIcon("wrench.svg")), "Settings", self)
         userConfigAction.setShortcut("Ctrl+Alt+S")
         userConfigAction.triggered.connect(self.OnConfigChange)
         fileMenu.addAction(userConfigAction)
-        # Load all courses
-        #loadAllAction = QAction("Load all courses on site", self)
-        #loadAllAction.triggered.connect(self.LoadAll)
-        #fileMenu.addAction(loadAllAction)
+        # Log off currrent user + exit
+        fileMenu.addSeparator()
+        switchAction = QAction(QIcon(config.FontAweSomeIcon("right-from-bracket.svg")), "Log off current user + Quit application", self)
+        switchAction.setShortcut("Ctrl+U")
+        switchAction.triggered.connect(self.OnSwitchUserClicked)
+        fileMenu.addAction(switchAction)
         # Exit
         fileMenu.addSeparator()
         exitAction = QAction("Exit", self)
         exitAction.setShortcut("Ctrl+X")
         exitAction.triggered.connect(self.exit_app)
         fileMenu.addAction(exitAction)
+
+        #
+        # --- Actions menu
+        #
+        actionsMenu = mainMenu.addMenu("Actions")
+        # Reload page
+        restartAction = QAction(QIcon(config.FontAweSomeIcon("rotate.svg")), "Jump to my courses landing page", self)
+        restartAction.setShortcut("Ctrl+Alt+R")
+        restartAction.triggered.connect(self.OnJump2Overview)
+        actionsMenu.addAction(restartAction)
+        # Jump to generated overview page
+        overviewAction = QAction(QIcon(config.FontAweSomeIcon("box-archive.svg")), "Jump to generated overview of all downloaded courses", self)
+        overviewAction.triggered.connect(self.OnJump2GeneratedOverview)
+        actionsMenu.addAction(overviewAction)
+        # Generate an overview of all courses (html)
+        actionsMenu.addSeparator()
+        overviewAction = QAction(QIcon(config.FontAweSomeIcon("table-list.svg")), "Generate an overview of all downloaded courses", self)
+        overviewAction.setShortcut("Ctrl+Alt+O")
+        overviewAction.triggered.connect(self.OnGenerateOverview)
+        actionsMenu.addAction(overviewAction)
+        # Cancel current download
+        actionsMenu.addSeparator()
+        cancelDownloadAction = QAction("Cancel current download", self)
+        cancelDownloadAction.setShortcut("Ctrl+Alt+C")
+        cancelDownloadAction.triggered.connect(self.OnCancelDownload)
+        actionsMenu.addAction(cancelDownloadAction)
 
     def exit_app(self):
         self.close()
@@ -185,7 +206,11 @@ class UDemyWebCrawler(QMainWindow):
         self.web.ClearCookiesOnURL(config.UDEMY_MAIN_LOGON_URL, ondonecallback, clearall)
 
     def OnSwitchUserClicked(self):
-        self.OnSwitchUser(True, self.OnSwitchUserClickedDone)
+        ret = QMessageBox.question(self, 'Logoff user',
+                                   f"Do you really want to logout from UDemy?\n\nYou must re-start the application and re-login!",
+                                   QMessageBox.Yes | QMessageBox.No)
+        if ret == QMessageBox.Yes:
+            self.OnSwitchUser(True, self.OnSwitchUserClickedDone)
 
     def LoadAll(self):
         script = (
@@ -267,6 +292,121 @@ class UDemyWebCrawler(QMainWindow):
                     self.ThreadCancelTrigger = None
             except Exception as error:
                 pass
+
+    def GetTitleFromCourseId(self, CourseId):
+        url = config.UDEMY_API_COURSE_TITLE.format(CourseId=CourseId)
+        log.info(f"Getting course title for course with id '{CourseId}'")
+        log.info(f" Course url is: '{url}'")
+        # Get more information on course:
+        req = Request(url, headers=self.RequestHeaders())
+        res = urlopen(req).read()
+        # Convert to json
+        CourseInfo = json.loads(res.decode("utf-8"))
+        log.debug(pformat(CourseInfo))
+        Title = CourseInfo[config.UDEMY_API_FIELD_COURSE_TITLE]
+        log.info(f"Title:\n{Title}")
+        return Title
+
+    def GenerateCourseInfoFile(self, CourseInfoFile, CourseInfo):
+        with open(CourseInfoFile, 'wb') as f:
+            pickle.dump(CourseInfo, f, pickle.HIGHEST_PROTOCOL)
+
+    def LoadCourseInfoFile(self, CourseInfoFile):
+        with open(CourseInfoFile, 'rb') as f:
+            return pickle.load(f)
+
+    def BuildCourseInfos(self):
+        CourseFolders = [f.path for f in os.scandir(self.cfg.DownloadPath) if f.is_dir()]
+        Courses = []
+        for CourseFolder in CourseFolders:
+            # Check if course in in folder exists
+            CourseInfo = {
+                "Id" : 0,
+                "Title" : "",
+                "Path" : ""
+            }
+            # Load already stored course info if available:
+            CourseInfoFile = CourseFolder+os.sep+config.COURSE_ID_FILE_NAME
+            if os.path.exists(CourseInfoFile):
+                CourseInfo = self.LoadCourseInfoFile(CourseInfoFile)
+            else:
+                # Get course id from hashtag in pathname:
+                try:
+                    CourseId = re.findall(r'#(.+?)#', CourseFolder)[0]
+                    CourseInfo["Id"] = int(CourseId)
+                    CourseInfo["Title"] = self.GetTitleFromCourseId(CourseInfo["Id"])
+                    CourseInfo["Path"] = CourseFolder
+                    self.GenerateCourseInfoFile(CourseInfoFile, CourseInfo)
+                except Exception as error:
+                    CourseInfo["Id"] = 0
+                    log.error(f"An error has been occured on CourseFolder {CourseFolder}:")
+                    log.error(traceback.format_exc())
+
+            # Add course info to list
+            if CourseInfo["Id"] > 0:
+                Courses.append(CourseInfo)
+        return Courses
+
+    def AddHTMLCourse(self, CourseId, CourseTitle, CoursePath):
+        CoursePathPrepared = CoursePath.replace("\\","/").replace("#","%23")
+        CoursePathURL = f"file:///{CoursePathPrepared}/"
+        CourseImage = f"{CoursePathURL}/{config.COURSE_PREVIEW_IMAGE_NAME}"
+        HTMLCourse = (
+            "\n"
+           f"       <div class='card' data-filter='{CourseTitle}'>\n"
+           f"           <img src='{CourseImage}' class='card-img-top' alt='' width='240px'></img>" 
+            "           <div class='card-body'>\n"
+           f"               <h4 class='card-title'>Course ID: {CourseId}</h4>\n"
+           f"               <p>{CourseTitle}</p>\n"
+           f"               <a class='card-link' href='{CoursePathURL}'>Open folder</a>\n"   
+            "           </div>\n"
+            "       </div>\n\n"
+        )
+        return HTMLCourse
+
+    def GenerateOverview(self, dogenerate, askuser):
+        # Overview filename
+        overviewfilename = self.cfg.DownloadPath + os.sep + config.COURSE_OVERVIEW_FILE_NAME
+        # Generate overview ?
+        if dogenerate:
+            # Build a list of all courses in each folder
+            Courses = self.BuildCourseInfos()
+            # Now build an html overview of all available courses
+            if Courses:
+                HTML = ""
+                for Course in Courses:
+                    CourseId = Course["Id"]
+                    CourseTitle = Course["Title"]
+                    CoursePath = Course["Path"]
+                    HTML = HTML + self.AddHTMLCourse(CourseId, CourseTitle, CoursePath)
+                # Add header and footer
+                HTML = config.HTML_HEADER + HTML + config.HTML_FOOTER
+                # Write an index.html file to main download folder
+                desc = open(overviewfilename, "w", encoding="utf-8")
+                desc.write(HTML)
+                desc.close()
+        # Open generated overview ?
+        openit = True
+        if askuser:
+            ret = QMessageBox.question(self, 'Finished',
+                                       f"Overview has been generated.\nDo you want to view it ?",
+                                       QMessageBox.Yes | QMessageBox.No)
+            if not ret == QMessageBox.Yes:
+                openit = False
+        if openit:
+            overviewfilename = overviewfilename.replace("\\", "/")
+            OverviewFile = f"file:///{overviewfilename}"
+            webbrowser.open(OverviewFile, new=0, autoraise=True)
+
+    def OnGenerateOverview(self):
+        self.GenerateOverview(True, True)
+
+    def OnJump2GeneratedOverview(self):
+        overviewfilename = self.cfg.DownloadPath + os.sep + config.COURSE_OVERVIEW_FILE_NAME
+        if not os.path.exists(overviewfilename):
+            self.GenerateOverview(True, False)
+        else:
+            self.GenerateOverview(False, False)
 
     def ResetProgress(self):
         self.progressBar.setValue(0)
