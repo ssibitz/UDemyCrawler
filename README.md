@@ -27,6 +27,10 @@ This app only automates the process of a user doing this manually in a web brows
 ## ***Tested on***
 - Windows 10
 
+## ***Development requirements***
+- Build with python 3.9 in IntelliJ-IDE
+- See requirements.txt for the needed dependencies 
+
 ## ***Features***
 - Log into your UDemy account by using email/password as on the website
 - Showing a simple view of "My learning"
