@@ -49,6 +49,11 @@ class UDemyWebCrawlerConfig(QDialog):
         self.cfgDownloadCourseVideoAgain= QCheckBox(self)
         self.cfgDownloadCourseVideoAgain.setChecked(self.cfg.DownloadCourseVideoAgain)
         formLayout.addRow(cfgDownloadCourseVideoAgainLabel, self.cfgDownloadCourseVideoAgain)
+        # Check file size on downloaded video
+        cfgCheckFileSizeLabel = QLabel("Check file size of downloaded course video", self)
+        self.cfgCheckFileSize= QCheckBox(self)
+        self.cfgCheckFileSize.setChecked(self.cfg.DownloadCourseVideoCheckFileSize)
+        formLayout.addRow(cfgCheckFileSizeLabel, self.cfgCheckFileSize)
         # Download path
         cfgDownLabel = QLabel("Download path", self)
         self.cfgDownValue = QLineEdit()
@@ -63,6 +68,7 @@ class UDemyWebCrawlerConfig(QDialog):
         self.cfg.StartOnMonitorNumber = int(self.cfgStartValue.currentData())
         self.cfg.DownloadPath = self.cfgDownValue.text()
         self.cfg.DownloadCourseVideoAgain = self.cfgDownloadCourseVideoAgain.isChecked()
+        self.cfg.DownloadCourseVideoCheckFileSize = self.cfgCheckFileSize.isChecked()
         self.cfg.SaveConfigs()
         log.info(f"Configuration has been saved !")
         self.accept()

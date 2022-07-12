@@ -9,6 +9,8 @@ USR_CONFIG_DOWNLOAD_PATH = "DownloadPath"
 USR_CONFIG_DOWNLOAD_PATH_DEFAULT = "M:\\UDEMY"
 USR_CONFIG_DOWNLOAD_COURSE_AGAIN = "DownloadCourseVideoAgain"
 USR_CONFIG_DOWNLOAD_COURSE_AGAIN_DEFAULT = False
+USR_CONFIG_DOWNLOAD_CHECK_FILESIZE = "CheckFileSize"
+USR_CONFIG_DOWNLOAD_CHECK_FILESIZE_DEFAULT = False
 # Application
 APP_NAME = "UDemyCrawler"
 APP_TITLE = "UDemy course crawler - Copyright(c) 2022 by Stefan Sibitz"
@@ -188,6 +190,7 @@ class UserConfig():
         self.StartOnMonitorNumber = USR_CONFIG_START_ON_MONITOR_DEFAULT
         self.DownloadPath = USR_CONFIG_DOWNLOAD_PATH_DEFAULT
         self.DownloadCourseVideoAgain = USR_CONFIG_DOWNLOAD_COURSE_AGAIN_DEFAULT
+        self.DownloadCourseVideoCheckFileSize = USR_CONFIG_DOWNLOAD_CHECK_FILESIZE_DEFAULT
         # Init setting
         self.settings = None
         self.InitSettings()
@@ -206,11 +209,13 @@ class UserConfig():
         self.StartOnMonitorNumber = self.settings.value(USR_CONFIG_START_ON_MONITOR, USR_CONFIG_START_ON_MONITOR_DEFAULT)
         self.DownloadPath = self.settings.value(USR_CONFIG_DOWNLOAD_PATH, USR_CONFIG_DOWNLOAD_PATH_DEFAULT)
         self.DownloadCourseVideoAgain = self.valueToBool(self.settings.value(USR_CONFIG_DOWNLOAD_COURSE_AGAIN, USR_CONFIG_DOWNLOAD_COURSE_AGAIN_DEFAULT))
+        self.DownloadCourseVideoCheckFileSize = self.valueToBool(self.settings.value(USR_CONFIG_DOWNLOAD_CHECK_FILESIZE, USR_CONFIG_DOWNLOAD_CHECK_FILESIZE_DEFAULT))
 
     def SaveConfigs(self):
         self.settings.setValue(USR_CONFIG_START_ON_MONITOR, self.StartOnMonitorNumber)
         self.settings.setValue(USR_CONFIG_DOWNLOAD_PATH, self.DownloadPath)
         self.settings.setValue(USR_CONFIG_DOWNLOAD_COURSE_AGAIN, self.DownloadCourseVideoAgain)
+        self.settings.setValue(USR_CONFIG_DOWNLOAD_CHECK_FILESIZE, self.DownloadCourseVideoCheckFileSize)
         self.settings.sync()
         self.InitSettings(True)
 

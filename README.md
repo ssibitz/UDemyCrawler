@@ -27,8 +27,10 @@ This app only automates the process of a user doing this manually in a web brows
 ## ***Tested on***
 - Windows 10
 
-## ***Development requirements***
+## ***(Development) requirements***
 - Build with python 3.9 in IntelliJ-IDE
+- FFMPEG installed on windows from:
+  https://github.com/BtbN/FFmpeg-Builds
 - See requirements.txt for the needed dependencies 
 
 ## ***Features***

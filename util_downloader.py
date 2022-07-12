@@ -30,6 +30,7 @@ class DownloaderThread(QThread):
         self.access_token_value = accesstokenvalue
         self.cfg = config.UserConfig()
         self.overview = Overview(accesstokenvalue)
+        self.downloader = Downloader(accesstokenvalue)
 
     def RequestHeaders(self):
         HEADERS = config.HEADER_DEFAULT
@@ -138,7 +139,7 @@ class DownloaderThread(QThread):
         if not os.path.exists((CoursePath)):
             os.makedirs(CoursePath)
         # Download image
-        self.DownloadFileFast(Image, CoursePath + os.sep + config.COURSE_PREVIEW_IMAGE_NAME)
+        self.downloader.DownloadFileFast(Image, CoursePath + os.sep + config.COURSE_PREVIEW_IMAGE_NAME)
         # Create description
         desc = open(CoursePath + os.sep + config.COURSE_DESCRIPTION_FILE_NAME, "w", encoding="utf-8")
         desc.write(Description)
@@ -306,60 +307,10 @@ class DownloaderThread(QThread):
             str = str.replace(char, config.COURSE_NAME_SPECIAL_CHARS_REPLACE[char])
         return str
 
-    def DownloadCourseVideoAgain(self, url, filename):
-        # Always download course video again
-        if self.cfg.DownloadCourseVideoAgain:
-            return True
-        filename = filename.replace("\\", "/")
-        # If video does not exists download
-        if not os.path.exists(filename):
-            return True
-        # Check if video exists and in the right download size
-        log.info(f"Checking download video '{filename}' again from '{url}' ?")
-        contentlen = -1
-        try:
-            obj_info = urlopen(url)
-            contentlen = int(obj_info.getheader('Content-Length'))
-            log.info(f"FileSize of video from url content disk is: {contentlen}")
-        except Exception as error:
-            contentlen = -1
-            log.error(f"Can not get content length of file from url '{url}'")
-            log.error(traceback.format_exc())
-        # Re-download if content length not found
-        if contentlen == -1:
-            return True
-        #
-        filelen = -1
-        try:
-            filelen = os.stat(filename).st_size
-            log.info(f"FileSize of video on disk is: {filelen}")
-        except Exception as error:
-            filelen = -1
-            log.error(f"Can not get file length of file '{filename}'")
-            log.error(traceback.format_exc())
-        # Re-download if file length not found
-        if filelen == -1:
-            return True
-        # Check if sizes identically
-        if filelen == contentlen:
-            log.info(f"No need to redownload file '{filename}' because identical !")
-            return False
-        else:
-            return True
-
-    def DownloadFileFast(self, url, filename):
-        if self.DownloadCourseVideoAgain(url, filename):
-            resp = urlopen(url)
-            respHtml = resp.read()
-            binfile = open(filename, "wb")
-            binfile.write(respHtml)
-            binfile.close()
-
     def DoDownloadVideo(self, type, url, downloadvideoname):
         log.info(f"Try to download video (type={type}) '{downloadvideoname}' from '{url}' ")
         if not url == "":
-            self.DownloadFileFast(url, self.CoursePath + os.sep + downloadvideoname)
-            # urllib.request.urlretrieve(url, self.CoursePath + os.sep + downloadvideoname)
+            self.downloader.DownloadFileFast(url, self.CoursePath + os.sep + downloadvideoname)
             # Append video to playlist
             with open(self.PlaylistFileName, "a") as playlist:
                 playlist.write(f"#EXTINF:-1,{downloadvideoname}\n")
@@ -550,6 +501,64 @@ class Overview():
             overviewfilename = overviewfilename.replace("\\", "/")
             OverviewFile = f"file:///{overviewfilename}"
             webbrowser.open(OverviewFile, new=0, autoraise=True)
+
+class Downloader():
+    def __init__(self, accesstokenvalue):
+        self.cfg = config.UserConfig()
+        self.access_token_value = accesstokenvalue
+
+    def DownloadFileAgainFromURL(self, url, filename):
+        # Always download course video again
+        if self.cfg.DownloadCourseVideoAgain:
+            return True
+        filename = filename.replace("\\", "/")
+        # If video does not exists download
+        if not os.path.exists(filename):
+            return True
+        # File exists but no need to check file size activated
+        if not self.cfg.DownloadCourseVideoCheckFileSize:
+            log.info(f"No need to redownload file '{filename}' cause file exists and file size should not be checked again url and disk !")
+            return False
+        # Check if video exists and in the right download size
+        log.info(f"Checking filesize of downloaded '{filename}' again from '{url}' ?")
+        contentlen = -1
+        try:
+            obj_info = urlopen(url)
+            contentlen = int(obj_info.getheader('Content-Length'))
+            log.info(f"FileSize of video from url content disk is: {contentlen}")
+        except Exception as error:
+            contentlen = -1
+            log.error(f"Can not get content length of file from url '{url}'")
+            log.error(traceback.format_exc())
+        # Re-download if content length not found
+        if contentlen == -1:
+            return True
+        #
+        filelen = -1
+        try:
+            filelen = os.stat(filename).st_size
+            log.info(f"FileSize of video on disk is: {filelen}")
+        except Exception as error:
+            filelen = -1
+            log.error(f"Can not get file length of file '{filename}'")
+            log.error(traceback.format_exc())
+        # Re-download if file length not found
+        if filelen == -1:
+            return True
+        # Check if sizes identically
+        if filelen == contentlen:
+            log.info(f"No need to redownload file '{filename}' because identical !")
+            return False
+        else:
+            return True
+
+    def DownloadFileFast(self, url, filename):
+        if self.DownloadFileAgainFromURL(url, filename):
+            resp = urlopen(url)
+            respHtml = resp.read()
+            binfile = open(filename, "wb")
+            binfile.write(respHtml)
+            binfile.close()
 
 
 
