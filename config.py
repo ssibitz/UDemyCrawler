@@ -24,6 +24,9 @@ COURSE_DESCRIPTION_FILE_NAME = "description.html"
 COURSE_PLAYLIST = "playlist.m3u"
 COURSE_ID_FILE_NAME = "courseinfo.pickle"
 COURSE_OVERVIEW_FILE_NAME = "index.html"
+COURSE_CANCELED_STATE_FILE_NAME = "canceled.json"
+COURSE_CANCEL_TYPE_CHAPTER = "Chapter"
+COURSE_CANCEL_TYPE_SEGMENT = "Segment"
 # Special chars in chapter, ...
 COURSE_NAME_SPECIAL_CHARS_REPLACE =  {
     'ä' : 'ae',

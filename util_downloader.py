@@ -1,7 +1,9 @@
 import json
 import os
+import pickle
 import re
 import traceback
+import webbrowser
 import m3u8
 import config
 import util_logging as log
@@ -12,19 +14,22 @@ from urllib.parse import urlparse, parse_qs
 from PySide2.QtCore import QThread, Signal
 from urllib.request import Request, urlopen
 from pprint import pformat
+from PySide2.QtWidgets import QMessageBox
 
 class DownloaderThread(QThread):
     _signal_progress_parts: Union[Signal, Signal] = Signal(int, int, int)
     _signal_progress: Union[Signal, Signal] = Signal(int, int, int, str, str)
-    _signal_done: Union[Signal, Signal] = Signal(int, str)
     _signal_error: Union[Signal, Signal] = Signal(str)
+    _signal_done: Union[Signal, Signal] = Signal(int, str)
+    _signal_canceled: Union[Signal, Signal] = Signal()
 
     def __init__(self, mw, courseurl, accesstokenvalue):
         super(DownloaderThread, self).__init__(mw)
         self.canceled = False
-        self.cfg = config.UserConfig()
         self.course_url = courseurl
         self.access_token_value = accesstokenvalue
+        self.cfg = config.UserConfig()
+        self.overview = Overview(accesstokenvalue)
 
     def RequestHeaders(self):
         HEADERS = config.HEADER_DEFAULT
@@ -40,6 +45,24 @@ class DownloaderThread(QThread):
 
     def TriggerCancelDownload(self):
         self.canceled = True
+
+    def CanceledFileName(self):
+        return self.CoursePath + os.sep +config.COURSE_CANCELED_STATE_FILE_NAME
+
+    def DeleteCancelFile(self):
+        if os.path.exists(self.CanceledFileName()):
+            os.remove(self.CanceledFileName())
+
+    def SaveJSONCanceledState(self, data):
+        with open(self.CanceledFileName(), 'w') as json_file:
+            json.dump(data, json_file)
+
+    def LoadJSONCanceledState(self):
+        data = None
+        if os.path.exists(self.CanceledFileName()):
+            with open(self.CanceledFileName()) as json_file:
+                data = json.load(json_file)
+        return data
 
     def run(self):
         try:
@@ -61,23 +84,31 @@ class DownloaderThread(QThread):
             log.error(traceback.format_exc())
             self._signal_error.emit(repr(error))
         else:
-            # Download has been finished !
-            self._signal_done.emit(int(self.CourseId), self.CourseTitle)
+            # Download has been finished or canceled:
+            if self.canceled:
+                self._signal_canceled.emit()
+            else:
+                self._signal_done.emit(int(self.CourseId), self.CourseTitle)
 
     def ProcessCourse(self):
         start = time.time()
+        # TODO: Delete old canceled file or restore data's
+        if os.path.exists(self.CanceledFileName()):
+            self.DeleteCancelFile()
         # Get all course chapters
-        VideosList = self.LoadAllCourseChapters(self.CourseId)
+        ChapterList = self.LoadAllCourseChapters(self.CourseId)
         # Load all chapter videos
-        VideosCount = len(VideosList)
-        self._signal_progress.emit(0, 0, VideosCount, self.CourseTitle, "'calculating...'")
-        for VideoIdx in range(VideosCount):
+        ChaptersCount = len(ChapterList)
+        self._signal_progress.emit(0, 0, ChaptersCount, self.CourseTitle, "'calculating...'")
+        for ChapterIdx in range(ChaptersCount):
             if self.canceled:
+                if not os.path.exists(self.CanceledFileName()):
+                    self.ChapterCanceled(ChapterList[ChapterIdx])
                 break
-            self.DownloadVideoChapter(VideosList[VideoIdx])
-            processed = int((VideoIdx + 1) / VideosCount * 100)
-            prstime = self.calcProcessTime(start, VideoIdx + 1, VideosCount)
-            self._signal_progress.emit(processed, VideoIdx + 1, VideosCount, self.CourseTitle, prstime)
+            self.DownloadVideoChapter(ChapterList[ChapterIdx])
+            processed = int((ChapterIdx + 1) / ChaptersCount * 100)
+            prstime = self.calcProcessTime(start, ChapterIdx + 1, ChaptersCount)
+            self._signal_progress.emit(processed, ChapterIdx + 1, ChaptersCount, self.CourseTitle, prstime)
 
     def PrepareCourseDownload(self, CourseId):
         url = config.UDEMY_API_URL_COURSE_DETAILS.format(CourseId=CourseId)
@@ -94,7 +125,7 @@ class DownloaderThread(QThread):
         Description = CourseInfo[config.UDEMY_API_FIELD_COURSE_DESCRIPTION]
         log.info(f"Description:\n{Description}")
         Image = CourseInfo[config.UDEMY_API_FIELD_COURSE_IMAGE]
-        log.info(f"Image:\n{Description}")
+        log.info(f"Image:\n{Image}")
         # Build course path, prepare preview image and store description
         return self.BuildCoursePathInfo(CourseId, Title, Description, Image)
 
@@ -107,11 +138,13 @@ class DownloaderThread(QThread):
         if not os.path.exists((CoursePath)):
             os.makedirs(CoursePath)
         # Download image
-        self.DownloadCourseVideoAgain(Image, CoursePath + os.sep + config.COURSE_PREVIEW_IMAGE_NAME)
+        self.DownloadFileFast(Image, CoursePath + os.sep + config.COURSE_PREVIEW_IMAGE_NAME)
         # Create description
         desc = open(CoursePath + os.sep + config.COURSE_DESCRIPTION_FILE_NAME, "w", encoding="utf-8")
         desc.write(Description)
         desc.close()
+        # Build course info file
+        self.overview.BuildOrGetCourseInfo(CoursePath, CourseId)
         # Return path created
         return CoursePath
 
@@ -277,6 +310,7 @@ class DownloaderThread(QThread):
         # Always download course video again
         if self.cfg.DownloadCourseVideoAgain:
             return True
+        filename = filename.replace("\\", "/")
         # If video does not exists download
         if not os.path.exists(filename):
             return True
@@ -313,7 +347,7 @@ class DownloaderThread(QThread):
         else:
             return True
 
-    def DownloadVideoFast(self, url, filename):
+    def DownloadFileFast(self, url, filename):
         if self.DownloadCourseVideoAgain(url, filename):
             resp = urlopen(url)
             respHtml = resp.read()
@@ -324,7 +358,7 @@ class DownloaderThread(QThread):
     def DoDownloadVideo(self, type, url, downloadvideoname):
         log.info(f"Try to download video (type={type}) '{downloadvideoname}' from '{url}' ")
         if not url == "":
-            self.DownloadVideoFast(url, self.CoursePath + os.sep + downloadvideoname)
+            self.DownloadFileFast(url, self.CoursePath + os.sep + downloadvideoname)
             # urllib.request.urlretrieve(url, self.CoursePath + os.sep + downloadvideoname)
             # Append video to playlist
             with open(self.PlaylistFileName, "a") as playlist:
@@ -333,14 +367,25 @@ class DownloaderThread(QThread):
         else:
             log.info(f"Ignore no downloadable chapter (information only) !")
 
-    def DownloadVideoChapter(self, Video):
-        cnt = Video["cnt"]
-        Chapter_Index = Video["Chapter_Index"]
-        Chapter_Title = self.ReplaceSpecialChars(Video["Chapter_Title"])
+    def ChapterCanceled(self, Chapter):
+        ChapterInfo = Chapter
+        ChapterInfo.update({"CancelType" : config.COURSE_CANCEL_TYPE_CHAPTER})
+        self.SaveJSONCanceledState(ChapterInfo)
+
+    def SegmentCanceled(self, Chapter, segmentid):
+        ChapterInfo = Chapter
+        ChapterInfo.update({"CancelType" : config.COURSE_CANCEL_TYPE_SEGMENT})
+        ChapterInfo.update({"segmentid": segmentid})
+        self.SaveJSONCanceledState(ChapterInfo)
+
+    def DownloadVideoChapter(self, Chapter):
+        cnt = Chapter["cnt"]
+        Chapter_Index = Chapter["Chapter_Index"]
+        Chapter_Title = self.ReplaceSpecialChars(Chapter["Chapter_Title"])
         Chapter_Title = re.sub('[^0-9a-zA-Z]+', '_', Chapter_Title)
-        Lecture_FileName = Video["Lecture_FileName"]
-        Lecture_Download_URL = Video["Lecture_Download_URL"]
-        Lecture_Download_TYP = Video["Lecture_Download_TYP"]
+        Lecture_FileName = Chapter["Lecture_FileName"]
+        Lecture_Download_URL = Chapter["Lecture_Download_URL"]
+        Lecture_Download_TYP = Chapter["Lecture_Download_TYP"]
         try:
             DownloadVideoName = f"{cnt:04d}-{Chapter_Index:02d}-{Chapter_Title}-{Lecture_FileName}"
         except Exception as error:
@@ -364,6 +409,7 @@ class DownloaderThread(QThread):
                     segmentid = 0
                     for segment in m3u8list.segments:
                         if self.canceled:
+                            self.SegmentCanceled(Chapter, segmentid)
                             break
                         segmentid = segmentid + 1
                         Lecture_Download_URL = segment.uri
@@ -382,6 +428,128 @@ class DownloaderThread(QThread):
         elif ".mp4" in Lecture_Download_URL:
             DownloadExt = ".mp4"
         return DownloadExt
+
+class Overview():
+    def __init__(self, accesstokenvalue):
+        self.cfg = config.UserConfig()
+        self.access_token_value = accesstokenvalue
+
+    def RequestHeaders(self):
+        HEADERS = config.HEADER_DEFAULT
+        HEADERS.update({config.HEADER_COOKIE_NAME : config.HEADER_COOKIE_ACCESS_TOKEN.format(access_token_value=self.access_token_value)})
+        return HEADERS
+
+    def GetTitleFromCourseId(self, CourseId):
+        url = config.UDEMY_API_COURSE_TITLE.format(CourseId=CourseId)
+        log.info(f"Getting course title for course with id '{CourseId}'")
+        log.info(f" Course url is: '{url}'")
+        # Get more information on course:
+        req = Request(url, headers=self.RequestHeaders())
+        res = urlopen(req).read()
+        # Convert to json
+        CourseInfo = json.loads(res.decode("utf-8"))
+        log.debug(pformat(CourseInfo))
+        Title = CourseInfo[config.UDEMY_API_FIELD_COURSE_TITLE]
+        log.info(f"Title:\n{Title}")
+        return Title
+
+    def GenerateCourseInfoFile(self, CourseInfoFile, CourseInfo):
+        with open(CourseInfoFile, 'wb') as f:
+            pickle.dump(CourseInfo, f, pickle.HIGHEST_PROTOCOL)
+
+    def LoadCourseInfoFile(self, CourseInfoFile):
+        with open(CourseInfoFile, 'rb') as f:
+            return pickle.load(f)
+
+    def BuildOrGetCourseInfo(self, CourseFolder, CourseId):
+        CourseInfo = {
+            "Id" : 0,
+            "Title" : "",
+            "Path" : ""
+        }
+        CourseInfoFile = CourseFolder + os.sep + config.COURSE_ID_FILE_NAME
+        if os.path.exists(CourseInfoFile):
+            CourseInfo = self.LoadCourseInfoFile(CourseInfoFile)
+        else:
+            CourseInfo["Id"] = int(CourseId)
+            CourseInfo["Title"] = self.GetTitleFromCourseId(CourseInfo["Id"])
+            CourseInfo["Path"] = CourseFolder
+            self.GenerateCourseInfoFile(CourseInfoFile, CourseInfo)
+        return CourseInfo
+
+    def BuildCourseInfos(self):
+        CourseFolders = [f.path for f in os.scandir(self.cfg.DownloadPath) if f.is_dir()]
+        Courses = []
+        for CourseFolder in CourseFolders:
+            # Check if course in in folder exists
+            CourseInfo = {
+                "Id" : 0,
+                "Title" : "",
+                "Path" : ""
+            }
+            # Get course id from hashtag in pathname:
+            try:
+                CourseId = re.findall(r'#(.+?)#', CourseFolder)[0]
+                CourseInfo = self.BuildOrGetCourseInfo(CourseFolder, CourseId)
+            except Exception as error:
+                CourseInfo["Id"] = 0
+                log.error(f"An error has been occured on CourseFolder {CourseFolder}:")
+                log.error(traceback.format_exc())
+            # Add course info to list
+            if CourseInfo["Id"] > 0:
+                Courses.append(CourseInfo)
+        return Courses
+
+    def AddHTMLCourse(self, CourseId, CourseTitle, CoursePath):
+        CoursePathPrepared = CoursePath.replace("\\","/").replace("#","%23")
+        CoursePathURL = f"file:///{CoursePathPrepared}/"
+        CourseImage = f"{CoursePathURL}/{config.COURSE_PREVIEW_IMAGE_NAME}"
+        HTMLCourse = (
+            "\n"
+           f"       <div class='card' data-filter='{CourseTitle}'>\n"
+           f"           <img src='{CourseImage}' class='card-img-top' alt='' width='240px'></img>" 
+            "           <div class='card-body'>\n"
+           f"               <h4 class='card-title'>Course ID: {CourseId}</h4>\n"
+           f"               <p>{CourseTitle}</p>\n"
+           f"               <a class='card-link' href='{CoursePathURL}'>Open folder</a>\n"   
+            "           </div>\n"
+            "       </div>\n\n"
+        )
+        return HTMLCourse
+
+    def GenerateOverview(self, dogenerate, askuser):
+        # Overview filename
+        overviewfilename = self.cfg.DownloadPath + os.sep + config.COURSE_OVERVIEW_FILE_NAME
+        # Generate overview ?
+        if dogenerate:
+            # Build a list of all courses in each folder
+            Courses = self.BuildCourseInfos()
+            # Now build an html overview of all available courses
+            if Courses:
+                HTML = ""
+                for Course in Courses:
+                    CourseId = Course["Id"]
+                    CourseTitle = Course["Title"]
+                    CoursePath = Course["Path"]
+                    HTML = HTML + self.AddHTMLCourse(CourseId, CourseTitle, CoursePath)
+                # Add header and footer
+                HTML = config.HTML_HEADER + HTML + config.HTML_FOOTER
+                # Write an index.html file to main download folder
+                desc = open(overviewfilename, "w", encoding="utf-8")
+                desc.write(HTML)
+                desc.close()
+        # Open generated overview ?
+        openit = True
+        if askuser:
+            ret = QMessageBox.question(None, 'Finished',
+                                       f"Overview has been generated.\nDo you want to view it ?",
+                                       QMessageBox.Yes | QMessageBox.No)
+            if not ret == QMessageBox.Yes:
+                openit = False
+        if openit:
+            overviewfilename = overviewfilename.replace("\\", "/")
+            OverviewFile = f"file:///{overviewfilename}"
+            webbrowser.open(OverviewFile, new=0, autoraise=True)
 
 
 
