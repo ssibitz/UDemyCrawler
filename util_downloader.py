@@ -9,6 +9,7 @@ import config
 import util_logging as log
 import time
 import datetime as dt
+import zipfile
 from typing import Union
 from urllib.parse import urlparse, parse_qs
 from PySide2.QtCore import QThread, Signal
@@ -45,6 +46,7 @@ class DownloaderThread(QThread):
         return finishtime
 
     def TriggerCancelDownload(self):
+        self.DeleteCancelFile()
         self.canceled = True
 
     def CanceledFileName(self):
@@ -80,6 +82,10 @@ class DownloaderThread(QThread):
                 playlist.write("#EXTM3U\n")
             # Process all courses
             self.ProcessCourse()
+            # Delete file cause no longer needed if not canceled by user
+            if not self.canceled:
+                if os.path.exists(self.CanceledFileName()):
+                    self.DeleteCancelFile()
         except Exception as error:
             log.error(f"An error has been occured on Course with url {self.course_url}:")
             log.error(traceback.format_exc())
@@ -93,23 +99,23 @@ class DownloaderThread(QThread):
 
     def ProcessCourse(self):
         start = time.time()
-        # TODO: Delete old canceled file or restore data's
-        if os.path.exists(self.CanceledFileName()):
-            self.DeleteCancelFile()
+        # Load canceled file if available to resume:
+        self.canceled_file = self.LoadJSONCanceledState()
         # Get all course chapters
-        ChapterList = self.LoadAllCourseChapters(self.CourseId)
+        LecturesList = self.LoadAllCourseLectures(self.CourseId)
         # Load all chapter videos
-        ChaptersCount = len(ChapterList)
-        self._signal_progress.emit(0, 0, ChaptersCount, self.CourseTitle, "'calculating...'")
-        for ChapterIdx in range(ChaptersCount):
+        LecturesCount = len(LecturesList)
+        self._signal_progress.emit(0, 0, LecturesCount, self.CourseTitle, "'calculating...'")
+        for LectureIdx in range(LecturesCount):
+            self.DownloadVideoChapter(LectureIdx+1, LecturesList[LectureIdx])
+            processed = int((LectureIdx + 1) / LecturesCount * 100)
+            prstime = self.calcProcessTime(start, LectureIdx + 1, LecturesCount)
+            self._signal_progress.emit(processed, LectureIdx + 1, LecturesCount, self.CourseTitle, prstime)
+            # User has been canceled ?
             if self.canceled:
                 if not os.path.exists(self.CanceledFileName()):
-                    self.ChapterCanceled(ChapterList[ChapterIdx])
+                    self.ChapterCanceled(LectureIdx+1, LecturesList[LectureIdx])
                 break
-            self.DownloadVideoChapter(ChapterList[ChapterIdx])
-            processed = int((ChapterIdx + 1) / ChaptersCount * 100)
-            prstime = self.calcProcessTime(start, ChapterIdx + 1, ChaptersCount)
-            self._signal_progress.emit(processed, ChapterIdx + 1, ChaptersCount, self.CourseTitle, prstime)
 
     def PrepareCourseDownload(self, CourseId):
         url = config.UDEMY_API_URL_COURSE_DETAILS.format(CourseId=CourseId)
@@ -261,7 +267,7 @@ class DownloaderThread(QThread):
                     log.error(errormessage)
                     # raise Exception(errormessage)
 
-    def LoadAllCourseChapters(self, CourseId):
+    def LoadAllCourseLectures(self, CourseId):
         url = config.UDEMY_API_URL_COURSE_CHAPTERS.format(CourseId=CourseId)
         log.info(f"Getting course chapters information for course with id '{CourseId}'")
         log.info(f" Course chapter url is: '{url}'")
@@ -318,18 +324,63 @@ class DownloaderThread(QThread):
         else:
             log.info(f"Ignore no downloadable chapter (information only) !")
 
-    def ChapterCanceled(self, Chapter):
+    def ChapterCanceled(self, LectureIdx, Chapter):
         ChapterInfo = Chapter
         ChapterInfo.update({"CancelType" : config.COURSE_CANCEL_TYPE_CHAPTER})
+        ChapterInfo.update({"LectureIdx": LectureIdx})
+        ChapterInfo.update({"SegmentIdx": -1})
         self.SaveJSONCanceledState(ChapterInfo)
 
-    def SegmentCanceled(self, Chapter, segmentid):
+    def SegmentCanceled(self, LectureIdx, Chapter, segmentid):
         ChapterInfo = Chapter
         ChapterInfo.update({"CancelType" : config.COURSE_CANCEL_TYPE_SEGMENT})
-        ChapterInfo.update({"segmentid": segmentid})
+        ChapterInfo.update({"LectureIdx": LectureIdx})
+        ChapterInfo.update({"SegmentIdx": segmentid})
         self.SaveJSONCanceledState(ChapterInfo)
 
-    def DownloadVideoChapter(self, Chapter):
+    def IgnoreDownloadFileChapterSectionCauseOfResume(self, cnt, LectureIdx, Chapter_Index, SegmentIdx = -1):
+        Ignore = False
+        if not self.canceled_file is None:
+            CancelType = self.canceled_file["CancelType"]
+            CanceledLectureIdx = self.canceled_file["LectureIdx"]
+            CanceledSegmentIdx = self.canceled_file["SegmentIdx"]
+            if "Chapter" in CancelType:
+                if LectureIdx <= CanceledLectureIdx:
+                    Ignore = True
+            elif "Segment" in CancelType:
+                if LectureIdx < CanceledLectureIdx:
+                    Ignore = True
+                elif LectureIdx == CanceledLectureIdx and SegmentIdx <= CanceledSegmentIdx:
+                    Ignore = True
+        return Ignore
+    def DownloadVideoParts(self, Lecture_Download_URL, LectureIdx, Chapter, cnt, Chapter_Index, Chapter_Title, Lecture_FileName, Lecture_Download_TYP):
+        # Get m3u8 file list
+        m3u8list = m3u8.load(Lecture_Download_URL)
+        # If playlist contains other playlists with different resolutions get highest
+        if m3u8list.is_variant:
+            bestresplaylisturl = self.GetPlaylistwithhighestResolution(m3u8list.playlists).uri
+            m3u8list = m3u8.load(bestresplaylisturl)
+        # Get all segments and download it:
+        segments = m3u8list.segments
+        if not segments is None:
+            # Download all segments
+            segmentscount = len(m3u8list.segments)
+            segmentid = 0
+            for segment in m3u8list.segments:
+                segmentid = segmentid + 1
+                Lecture_Download_URL = segment.uri
+                DownloadExt = self.ExtractDownloadExtFromUri(Lecture_Download_URL)
+                DownloadVideoNameSplitted = f"{cnt:04d}-{LectureIdx:04d}-{segmentid:04d}-{Chapter_Index:02d}-{Chapter_Title}-{Lecture_FileName}{DownloadExt}"
+                # Download splitted video part
+                if not self.IgnoreDownloadFileChapterSectionCauseOfResume(cnt, LectureIdx, Chapter_Index, segmentid):
+                    self.DoDownloadVideo(Lecture_Download_TYP, Lecture_Download_URL, DownloadVideoNameSplitted)
+                self._signal_progress_parts.emit(Chapter_Index, segmentid, segmentscount)
+                # User has been canceled ?
+                if self.canceled:
+                    self.SegmentCanceled(LectureIdx, Chapter, segmentid)
+                    break
+
+    def DownloadVideoChapter(self, LectureIdx, Chapter):
         cnt = Chapter["cnt"]
         Chapter_Index = Chapter["Chapter_Index"]
         Chapter_Title = self.ReplaceSpecialChars(Chapter["Chapter_Title"])
@@ -337,40 +388,21 @@ class DownloaderThread(QThread):
         Lecture_FileName = Chapter["Lecture_FileName"]
         Lecture_Download_URL = Chapter["Lecture_Download_URL"]
         Lecture_Download_TYP = Chapter["Lecture_Download_TYP"]
+        # Build name for downloading
         try:
-            DownloadVideoName = f"{cnt:04d}-{Chapter_Index:02d}-{Chapter_Title}-{Lecture_FileName}"
+            DownloadVideoName = f"{cnt:04d}-{LectureIdx:04d}-{Chapter_Index:02d}-{Chapter_Title}-{Lecture_FileName}"
         except Exception as error:
-            DownloadVideoName = f"{cnt:04d}-00-{Chapter_Title}-{Lecture_FileName}"
+            try:
+                DownloadVideoName = f"{cnt:04d}-{LectureIdx:04d}-00-{Chapter_Title}-{Lecture_FileName}"
+            except Exception as error:
+                DownloadVideoName = f"{cnt:04d}-0000-00-{Chapter_Title}-{Lecture_FileName}"
         # Download video by type
-        if "MEDIA" in Lecture_Download_TYP:
-            if ".mp4" in Lecture_Download_URL:
-                self.DoDownloadVideo(Lecture_Download_TYP, Lecture_Download_URL, DownloadVideoName)
-            elif ".m3u8" in Lecture_Download_URL:
-                # Get m3u8 file list
-                m3u8list = m3u8.load(Lecture_Download_URL)
-                # If playlist contains other playlists with different resolutions get highest
-                if m3u8list.is_variant:
-                    bestresplaylisturl = self.GetPlaylistwithhighestResolution(m3u8list.playlists).uri
-                    m3u8list = m3u8.load(bestresplaylisturl)
-                # Get all segments and download it:
-                segments = m3u8list.segments
-                if not segments is None:
-                    # Download all segments
-                    segmentscount = len(m3u8list.segments)
-                    segmentid = 0
-                    for segment in m3u8list.segments:
-                        if self.canceled:
-                            self.SegmentCanceled(Chapter, segmentid)
-                            break
-                        segmentid = segmentid + 1
-                        Lecture_Download_URL = segment.uri
-                        DownloadExt = self.ExtractDownloadExtFromUri(Lecture_Download_URL)
-                        DownloadVideoNameSplitted = f"{cnt:04d}-{segmentid:04d}-{Chapter_Index:02d}-{Chapter_Title}-{Lecture_FileName}{DownloadExt}"
-                        # Download splitted video part
-                        self.DoDownloadVideo(Lecture_Download_TYP, Lecture_Download_URL, DownloadVideoNameSplitted)
-                        self._signal_progress_parts.emit(Chapter_Index, segmentid, segmentscount)
+        if "MEDIA" in Lecture_Download_TYP and ".m3u8" in Lecture_Download_URL:
+            self.DownloadVideoParts(Lecture_Download_URL, LectureIdx, Chapter, cnt, Chapter_Index, Chapter_Title,
+                                    Lecture_FileName, Lecture_Download_TYP)
         else:
-            self.DoDownloadVideo(Lecture_Download_TYP, Lecture_Download_URL, DownloadVideoName)
+            if not self.IgnoreDownloadFileChapterSectionCauseOfResume(cnt, LectureIdx, Chapter_Index):
+                self.DoDownloadVideo(Lecture_Download_TYP, Lecture_Download_URL, DownloadVideoName)
 
     def ExtractDownloadExtFromUri(self, Lecture_Download_URL):
         DownloadExt = ""
@@ -560,6 +592,33 @@ class Downloader():
             binfile.write(respHtml)
             binfile.close()
 
+class FFMPEGUtil():
+    def __init__(self, accesstokenvalue):
+        self.cfg = config.UserConfig()
+        self.downloader = Downloader(accesstokenvalue)
 
+    def FFMPEGUtilFullPath(self):
+        return config.FFMPEGDownloadPath()+os.sep+config.FFMPEG_TOOL_PATH
 
-
+    def FFMPEGUtilFullFilePath(self):
+        return self.FFMPEGUtilFullPath()+os.sep+config.FFMPEG_TOOL_FILENAME
+    def Available(self):
+        if not os.path.exists(config.FFMPEGDownloadPath()):
+            return False
+        if os.path.exists(self.FFMPEGUtilFullFilePath()):
+            return False
+        return True
+    def DownloadAndInstall(self):
+        # Create ffmpeg download path if not existing
+        if not os.path.exists(config.FFMPEGDownloadPath()):
+            os.makedirs(config.FFMPEGDownloadPath())
+        # Delete old downloaded file to be sure that using always latest version:
+        FFMPEGFileNameFull = config.FFMPEGDownloadPath()+os.sep+config.FFMPEG_DOWNLOAD_FILENAME
+        if os.path.exists(FFMPEGFileNameFull):
+            os.remove(FFMPEGFileNameFull)
+        # Download latest version of ffmpeg
+        self.downloader.DownloadFileFast(config.FFMPEG_DOWNLOAD_LATEST_VERSION_URL, FFMPEGFileNameFull)
+        # Unzip file intoto current directory
+        zip_ref = zipfile.ZipFile(FFMPEGFileNameFull)
+        zip_ref.extractall(config.FFMPEGDownloadPath()) # extract file to dir
+        zip_ref.close() # close file

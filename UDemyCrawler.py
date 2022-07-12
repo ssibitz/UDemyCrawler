@@ -144,6 +144,10 @@ class UDemyWebCrawler(QMainWindow):
         userConfigAction.setShortcut("Ctrl+Alt+S")
         userConfigAction.triggered.connect(self.OnConfigChange)
         fileMenu.addAction(userConfigAction)
+        # Download ffmpeg (latest release)
+        ffmpegAction = QAction(QIcon(config.FontAweSomeIcon("film.svg")), "Download & install latest ffmpeg", self)
+        ffmpegAction.triggered.connect(self.OnDownloadInstallFFMPEG)
+        fileMenu.addAction(ffmpegAction)
         # Log off currrent user + exit
         fileMenu.addSeparator()
         switchAction = QAction(QIcon(config.FontAweSomeIcon("right-from-bracket.svg")), "Log off current user + Quit application", self)
@@ -233,6 +237,16 @@ class UDemyWebCrawler(QMainWindow):
         dlg = UDemyWebCrawlerConfig()
         if dlg.exec_():
             self.cfg.LoadConfigs()
+
+    def OnDownloadInstallFFMPEG(self):
+        try:
+            ffmpegutil = util_downloader.FFMPEGUtil(self.access_token_value)
+            ffmpegutil.DownloadAndInstall()
+            QMessageBox.information(self, "Done", "FFMPEG has been sucessfully installed")
+        except Exception as error:
+            log.error(f"An error has been occured on installing FFMPEG:")
+            log.error(traceback.format_exc())
+            QMessageBox.warning(self, "Done", f"An error has been occured on installation of FFMPEG:\n{error}")
 
     def OnSwitchUserClickedDone(self, html):
         self.close()

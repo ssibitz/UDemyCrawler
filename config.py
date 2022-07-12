@@ -11,6 +11,11 @@ USR_CONFIG_DOWNLOAD_COURSE_AGAIN = "DownloadCourseVideoAgain"
 USR_CONFIG_DOWNLOAD_COURSE_AGAIN_DEFAULT = False
 USR_CONFIG_DOWNLOAD_CHECK_FILESIZE = "CheckFileSize"
 USR_CONFIG_DOWNLOAD_CHECK_FILESIZE_DEFAULT = False
+# FFMPEG specific
+FFMPEG_DOWNLOAD_FILENAME = "ffmpeg-master-latest-win64-gpl.zip"
+FFMPEG_DOWNLOAD_LATEST_VERSION_URL = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip"
+FFMPEG_TOOL_PATH = "\\ffmpeg-master-latest-win64-gpl\\bin"
+FFMPEG_TOOL_FILENAME = "ffmpeg.exe"
 # Application
 APP_NAME = "UDemyCrawler"
 APP_TITLE = "UDemy course crawler - Copyright(c) 2022 by Stefan Sibitz"
@@ -163,7 +168,6 @@ HEADER_DEFAULT = {
 HEADER_COOKIE_NAME = "Cookie"
 HEADER_COOKIE_ACCESS_TOKEN = "access_token={access_token_value}"
 
-
 def AppResource(resource):
     return path.abspath(path.join(path.dirname(__file__), resource))
 
@@ -173,15 +177,8 @@ def FontAweSomeIcon(icon, type = "solid"):
 def AppIcon():
     return AppResource(APP_ICON_NAME)
 
-# Resources inside pyinstaller
-def resource_path(relative):
-    return os.path.join(
-        os.environ.get(
-            "_MEIPASS2",
-            os.path.abspath(".")
-        ),
-        relative
-    )
+def FFMPEGDownloadPath():
+    return AppResource(f"FFMPEG\\")
 
 # Ini-File
 class UserConfig():
