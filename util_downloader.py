@@ -89,6 +89,12 @@ class DownloaderThread(QThread):
         except Exception as error:
             log.error(f"An error has been occured on Course with url {self.course_url}:")
             log.error(traceback.format_exc())
+            # Try to make an canceled file depending on what has been canceled:
+            if self.LastSegmentIdx == -1:
+                self.ChapterCanceled()
+            else:
+                self.SegmentCanceled()
+            # Show error to user
             self._signal_error.emit(repr(error))
         else:
             # Download has been finished or canceled:
@@ -106,15 +112,24 @@ class DownloaderThread(QThread):
         # Load all chapter videos
         LecturesCount = len(LecturesList)
         self._signal_progress.emit(0, 0, LecturesCount, self.CourseTitle, "'calculating...'")
+        self.LastLectureIdx = -1
+        self.LastSegmentIdx = -1
+        self.CurrentLectureIdx = -1
         for LectureIdx in range(LecturesCount):
-            self.DownloadVideoChapter(LectureIdx+1, LecturesList[LectureIdx])
-            processed = int((LectureIdx + 1) / LecturesCount * 100)
-            prstime = self.calcProcessTime(start, LectureIdx + 1, LecturesCount)
-            self._signal_progress.emit(processed, LectureIdx + 1, LecturesCount, self.CourseTitle, prstime)
+            # Reset last segment index
+            self.LastSegmentIdx = -1
+            self.CurrentLectureIdx = LectureIdx+1
+            # Download chapter
+            self.DownloadVideoChapter(self.CurrentLectureIdx, LecturesList[LectureIdx])
+            processed = int((self.CurrentLectureIdx) / LecturesCount * 100)
+            prstime = self.calcProcessTime(start, self.CurrentLectureIdx, LecturesCount)
+            self._signal_progress.emit(processed, self.CurrentLectureIdx, LecturesCount, self.CourseTitle, prstime)
+            # Store last processed lecture index
+            self.LastLectureIdx = self.CurrentLectureIdx
             # User has been canceled ?
             if self.canceled:
                 if not os.path.exists(self.CanceledFileName()):
-                    self.ChapterCanceled(LectureIdx+1, LecturesList[LectureIdx])
+                    self.ChapterCanceled()
                 break
 
     def PrepareCourseDownload(self, CourseId):
@@ -324,19 +339,19 @@ class DownloaderThread(QThread):
         else:
             log.info(f"Ignore no downloadable chapter (information only) !")
 
-    def ChapterCanceled(self, LectureIdx, Chapter):
-        ChapterInfo = Chapter
-        ChapterInfo.update({"CancelType" : config.COURSE_CANCEL_TYPE_CHAPTER})
-        ChapterInfo.update({"LectureIdx": LectureIdx})
-        ChapterInfo.update({"SegmentIdx": -1})
-        self.SaveJSONCanceledState(ChapterInfo)
+    def ChapterCanceled(self):
+        CanceledInfo = {}
+        CanceledInfo.update({"CancelType": config.COURSE_CANCEL_TYPE_CHAPTER})
+        CanceledInfo.update({"LectureIdx": self.LastLectureIdx})
+        CanceledInfo.update({"SegmentIdx": -1})
+        self.SaveJSONCanceledState(CanceledInfo)
 
-    def SegmentCanceled(self, LectureIdx, Chapter, segmentid):
-        ChapterInfo = Chapter
-        ChapterInfo.update({"CancelType" : config.COURSE_CANCEL_TYPE_SEGMENT})
-        ChapterInfo.update({"LectureIdx": LectureIdx})
-        ChapterInfo.update({"SegmentIdx": segmentid})
-        self.SaveJSONCanceledState(ChapterInfo)
+    def SegmentCanceled(self):
+        CanceledInfo = {}
+        CanceledInfo.update({"CancelType": config.COURSE_CANCEL_TYPE_SEGMENT})
+        CanceledInfo.update({"LectureIdx": self.LastLectureIdx})
+        CanceledInfo.update({"SegmentIdx": self.LastSegmentIdx})
+        self.SaveJSONCanceledState(CanceledInfo)
 
     def IgnoreDownloadFileChapterSectionCauseOfResume(self, cnt, LectureIdx, Chapter_Index, SegmentIdx = -1):
         Ignore = False
@@ -375,9 +390,12 @@ class DownloaderThread(QThread):
                 if not self.IgnoreDownloadFileChapterSectionCauseOfResume(cnt, LectureIdx, Chapter_Index, segmentid):
                     self.DoDownloadVideo(Lecture_Download_TYP, Lecture_Download_URL, DownloadVideoNameSplitted)
                 self._signal_progress_parts.emit(Chapter_Index, segmentid, segmentscount)
+                # Store last segment downloaded
+                self.LastLectureIdx = self.CurrentLectureIdx
+                self.LastSegmentIdx = segmentid
                 # User has been canceled ?
                 if self.canceled:
-                    self.SegmentCanceled(LectureIdx, Chapter, segmentid)
+                    self.SegmentCanceled()
                     break
 
     def DownloadVideoChapter(self, LectureIdx, Chapter):
