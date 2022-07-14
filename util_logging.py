@@ -1,24 +1,37 @@
-import os, logging, config
+import os, logging as log, util_constants as const
 
 
 def InitLogging():
-    if os.path.exists(config.APP_LOGFILE_NAME):
-        os.remove(config.APP_LOGFILE_NAME)
-    logging.basicConfig(filename=config.APP_LOGFILE_NAME, encoding='utf-8', level=logging.INFO, format='%(asctime)s %(levelname)-8s %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
+    # Remove old log file on startup
+    if os.path.exists(const.APP_LOGFILE_NAME):
+        os.remove(const.APP_LOGFILE_NAME)
+    log.basicConfig(filename=const.APP_LOGFILE_NAME, encoding='utf-8', level=log.INFO,
+                    format='%(asctime)s %(levelname)-8s %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
+
+
+def dolog(msg, type="info"):
+    if type == "info":
+        log.info(msg)
+    elif type == "debug":
+        log.debug(msg)
+    elif type == "error":
+        log.error(msg)
+    elif type == "warn":
+        log.warning(msg)
+    print(msg)  # Also output to console !
 
 
 def info(msg):
-    logging.info(msg)
-    print(msg) # Also output to console !
+    dolog(msg, "info")
+
 
 def debug(msg):
-    logging.debug(msg)
-    print(msg) # Also output to console !
+    dolog(msg, "debug")
+
 
 def error(msg):
-    logging.error(msg)
-    print(msg)
+    dolog(msg, "error")
+
 
 def warn(msg):
-    logging.warning(msg)
-    print(msg)
+    dolog(msg, "warn")

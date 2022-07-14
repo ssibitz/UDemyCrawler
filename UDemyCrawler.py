@@ -1,83 +1,12 @@
-import json
-import os
-import sys
-import traceback
-import config
-import util_downloader
-import util_logging as log
+import json, os, sys, traceback, util_logging as log, util_constants as const, util_downloader as downloader, \
+    util_webengine as webengine, util_settings, util_overview as overview, util_ffmpeg as ffmpeg
+from urllib.request import Request, urlopen
 from PySide2 import QtWidgets, QtCore, QtGui
 from PySide2.QtGui import QIcon, QFont
 from PySide2.QtWidgets import QWidget, QVBoxLayout, QApplication, \
-    QProgressBar, QLabel, QMainWindow, QAction, QDialog, QDialogButtonBox, QLineEdit, QFormLayout, QMessageBox, \
-    QFileDialog, QComboBox, QCheckBox
-from util_downloader import DownloaderThread
-from util_webengine import QWebEngineViewPlus
-from urllib.request import Request, urlopen
+    QProgressBar, QLabel, QMainWindow, QAction, QMessageBox
 from bs4 import BeautifulSoup
 
-class UDemyWebCrawlerConfig(QDialog):
-    def __init__(self):
-        super().__init__()
-        self.cfg = config.UserConfig()
-        self.cfg.LoadConfigs()
-        self.setWindowTitle("User configuration")
-        self.setWindowIcon(QIcon(config.AppIcon()))
-        self.initUI()
-
-    def initUI(self):
-        # Save or cancel button
-        QBtn = QDialogButtonBox.Save | QDialogButtonBox.Open | QDialogButtonBox.Cancel
-        self.buttonBox = QDialogButtonBox(QBtn)
-        self.buttonBox.button(QDialogButtonBox.Save).clicked.connect(self.Save)
-        self.buttonBox.button(QDialogButtonBox.Open).setText("Choose path")
-        self.buttonBox.button(QDialogButtonBox.Open).clicked.connect(self.Open)
-        self.buttonBox.button(QDialogButtonBox.Cancel).clicked.connect(self.Cancel)
-        self.layout = QVBoxLayout()
-        formLayout = QFormLayout()
-        # Start on monitor
-        cfgStartLabel = QLabel("Default start on monitor", self)
-        self.cfgStartValue = QComboBox()
-        self.cfgStartValue.addItem("Disabled", -1)
-        self.cfgStartValue.addItem("Primary monitor", 0)
-        self.cfgStartValue.addItem("Secondary monitor", 1)
-        StartValueDataIndex = self.cfgStartValue.findData(self.cfg.StartOnMonitorNumber)
-        if StartValueDataIndex >= 0:
-            self.cfgStartValue.setCurrentIndex(StartValueDataIndex)
-        formLayout.addRow(cfgStartLabel, self.cfgStartValue)
-        # Do not download existing videos again
-        cfgDownloadCourseVideoAgainLabel = QLabel("Download course video(s) again", self)
-        self.cfgDownloadCourseVideoAgain= QCheckBox(self)
-        self.cfgDownloadCourseVideoAgain.setChecked(self.cfg.DownloadCourseVideoAgain)
-        formLayout.addRow(cfgDownloadCourseVideoAgainLabel, self.cfgDownloadCourseVideoAgain)
-        # Check file size on downloaded video
-        cfgCheckFileSizeLabel = QLabel("Check file size of downloaded course video", self)
-        self.cfgCheckFileSize= QCheckBox(self)
-        self.cfgCheckFileSize.setChecked(self.cfg.DownloadCourseVideoCheckFileSize)
-        formLayout.addRow(cfgCheckFileSizeLabel, self.cfgCheckFileSize)
-        # Download path
-        cfgDownLabel = QLabel("Download path", self)
-        self.cfgDownValue = QLineEdit()
-        self.cfgDownValue.setText(self.cfg.DownloadPath)
-        formLayout.addRow(cfgDownLabel, self.cfgDownValue)
-        # Add to layout
-        self.layout.addLayout(formLayout)
-        self.layout.addWidget(self.buttonBox)
-        self.setLayout(self.layout)
-
-    def Save(self):
-        self.cfg.StartOnMonitorNumber = int(self.cfgStartValue.currentData())
-        self.cfg.DownloadPath = self.cfgDownValue.text()
-        self.cfg.DownloadCourseVideoAgain = self.cfgDownloadCourseVideoAgain.isChecked()
-        self.cfg.DownloadCourseVideoCheckFileSize = self.cfgCheckFileSize.isChecked()
-        self.cfg.SaveConfigs()
-        log.info(f"Configuration has been saved !")
-        self.accept()
-
-    def Open(self):
-        self.cfgDownValue.setText(str(QFileDialog.getExistingDirectory(self, "Select directory")))
-
-    def Cancel(self):
-        self.reject()
 
 class UDemyWebCrawler(QMainWindow):
 
@@ -87,6 +16,7 @@ class UDemyWebCrawler(QMainWindow):
         self.init()
         self.initUI()
         self.CreateMenu()
+        self.BlockUI()
 
     def init(self):
         # Reset cancel trigger
@@ -95,21 +25,26 @@ class UDemyWebCrawler(QMainWindow):
         self.access_token = ""
         self.access_token_value = ""
         # Init used classes
-        self.cfg = config.UserConfig()
-        self.web = QWebEngineViewPlus()
-        self.OnSwitchUser(False, None)
+        self.cfg = util_settings.Settings()
+        self.web = webengine.QWebEngineViewPlus()
+        # Load mysources page of udemy
+        self.SwitchUser(False, None)
 
     def initUI(self):
-        # Progress bar
-        self.progressBar = QProgressBar(self)
-        self.progressBar.setGeometry(QtCore.QRect(170, 420, 391, 23))
-        self.progressBar.setProperty("value", 0)
-        self.progressBar.setAlignment(QtCore.Qt.AlignCenter)
+        # Main application settings
+        self.setGeometry(100, 100, 1024, 768)
+        self.setWindowTitle(const.APP_TITLE)
+        self.setWindowIcon(QIcon(const.AppIcon()))
         # Progress bar label
-        self.progressBarLabel = QLabel(config.PROGRESSBAR_LABEL_DEFAULT, self)
+        self.progressBarLabel = QLabel(const.PROGRESSBAR_LABEL_DEFAULT, self)
         self.progressBarLabel.setFont(QFont('Times', 16))
         self.progressBarLabel.setAlignment(QtCore.Qt.AlignCenter)
         self.progressBarLabel.setMaximumHeight(26)
+        # Progress bar
+        self.progressBar = QProgressBar(self)
+        self.progressBar.setGeometry(QtCore.QRect(170, 420, 391, 23))
+        self.progressBar.setProperty('value', 0)
+        self.progressBar.setAlignment(QtCore.Qt.AlignCenter)
         # Layout
         vbox = QVBoxLayout(self)
         vbox.addWidget(self.web)
@@ -119,17 +54,13 @@ class UDemyWebCrawler(QMainWindow):
         central = QWidget()
         central.setLayout(vbox)
         self.setCentralWidget(central)
-        self.setGeometry(100, 100, 1024, 768)
-        self.setWindowTitle(config.APP_TITLE)
-        self.setWindowIcon(QIcon(config.AppIcon()))
-        self.show()
-        # Center window on custom monitor
-        NumberOfScreens = len(QtGui.QGuiApplication.screens())
-        StartOnMonitor = int(self.cfg.StartOnMonitorNumber)
-        if  NumberOfScreens > 1 and StartOnMonitor >= 0:
+        # Center window on custom monitor if activated
+        if len(QtGui.QGuiApplication.screens()) > 1 and self.cfg.StartOnMonitorNumber >= 0:
             w = self.window()
             w.setGeometry(QtWidgets.QStyle.alignedRect(QtCore.Qt.LeftToRight, QtCore.Qt.AlignCenter, w.size(),
-                                                       QtGui.QGuiApplication.screens()[StartOnMonitor].availableGeometry(), ), )
+                                                       QtGui.QGuiApplication.screens()[
+                                                           self.cfg.StartOnMonitorNumber].availableGeometry(), ), )
+        self.show()
 
     def CreateMenu(self):
         mainMenu = self.menuBar()
@@ -138,94 +69,255 @@ class UDemyWebCrawler(QMainWindow):
         # --- File menu
         #
         fileMenu = mainMenu.addMenu("File")
-        # -User configuration
+        # -User settings
         fileMenu.addSeparator()
-        userConfigAction = QAction(QIcon(config.FontAweSomeIcon("wrench.svg")), "Settings", self)
-        userConfigAction.setShortcut("Ctrl+Alt+S")
-        userConfigAction.triggered.connect(self.OnConfigChange)
-        fileMenu.addAction(userConfigAction)
-        # Download ffmpeg (latest release)
-        ffmpegAction = QAction(QIcon(config.FontAweSomeIcon("film.svg")), "Download & install latest ffmpeg", self)
-        ffmpegAction.triggered.connect(self.OnDownloadInstallFFMPEG)
-        fileMenu.addAction(ffmpegAction)
+        ActionSettings = QAction(QIcon(const.FontAweSomeIcon("wrench.svg")), "Settings", self)
+        ActionSettings.setShortcut("Ctrl+Alt+S")
+        ActionSettings.triggered.connect(self.OnActionSettings)
+        fileMenu.addAction(ActionSettings)
         # Log off currrent user + exit
         fileMenu.addSeparator()
-        switchAction = QAction(QIcon(config.FontAweSomeIcon("right-from-bracket.svg")), "Log off current user + Quit application", self)
-        switchAction.setShortcut("Ctrl+U")
-        switchAction.triggered.connect(self.OnSwitchUserClicked)
-        fileMenu.addAction(switchAction)
+        ActionSwitchUser = QAction(QIcon(const.FontAweSomeIcon("right-from-bracket.svg")),
+                                   "Log off current user + Quit application", self)
+        ActionSwitchUser.setShortcut("Ctrl+U")
+        ActionSwitchUser.triggered.connect(self.OnActionSwitchUser)
+        fileMenu.addAction(ActionSwitchUser)
         # Exit
         fileMenu.addSeparator()
-        exitAction = QAction("Exit", self)
-        exitAction.setShortcut("Ctrl+X")
-        exitAction.triggered.connect(self.exit_app)
-        fileMenu.addAction(exitAction)
+        ActionExit = QAction("Exit", self)
+        ActionExit.setShortcut("Ctrl+X")
+        ActionExit.triggered.connect(self.OnActionExit)
+        fileMenu.addAction(ActionExit)
 
         #
         # --- Actions menu
         #
         actionsMenu = mainMenu.addMenu("Actions")
         # Reload page
-        restartAction = QAction(QIcon(config.FontAweSomeIcon("rotate.svg")), "Jump to my courses landing page", self)
-        restartAction.setShortcut("Ctrl+Alt+R")
-        restartAction.triggered.connect(self.OnJump2Overview)
-        actionsMenu.addAction(restartAction)
-        # Jump to generated overview page
-        overviewAction = QAction(QIcon(config.FontAweSomeIcon("box-archive.svg")), "Jump to generated overview of all downloaded courses", self)
-        overviewAction.triggered.connect(self.OnJump2GeneratedOverview)
-        actionsMenu.addAction(overviewAction)
+        ActionJump2MyCourses = QAction(QIcon(const.FontAweSomeIcon("house.svg")), "(Re)load my courses",
+                                       self)
+        ActionJump2MyCourses.setShortcut("Ctrl+Alt+R")
+        ActionJump2MyCourses.triggered.connect(self.OnActionJump2MyCourses)
+        actionsMenu.addAction(ActionJump2MyCourses)
         # Generate an overview of all courses (html)
-        actionsMenu.addSeparator()
-        overviewAction = QAction(QIcon(config.FontAweSomeIcon("table-list.svg")), "Generate an overview (html) of all downloaded courses", self)
-        overviewAction.setShortcut("Ctrl+Alt+O")
-        overviewAction.triggered.connect(self.OnGenerateOverview)
-        actionsMenu.addAction(overviewAction)
+        # actionsMenu.addSeparator()
+        # ActionGenerateOverview = QAction(QIcon(const.FontAweSomeIcon("table-list.svg")),
+        #                                  "Generate an overview (html) of all downloaded courses", self)
+        # ActionGenerateOverview.setShortcut("Ctrl+Alt+O")
+        # ActionGenerateOverview.triggered.connect(self.OnActionGenerateOverview)
+        # actionsMenu.addAction(ActionGenerateOverview)
         # Concat all video files to one using ffmpeg
         actionsMenu.addSeparator()
-        concatAction =  QAction(QIcon(config.FontAweSomeIcon("code-merge.svg")), "Combine all downloaded video courses into one video", self)
-        concatAction.triggered.connect(self.OnCombineVideos)
-        actionsMenu.addAction(concatAction)
+        ActionCombine = QAction(QIcon(const.FontAweSomeIcon("code-merge.svg")),
+                                "Combine all downloaded video courses into one video", self)
+        ActionCombine.triggered.connect(self.OnActionCombine)
+        actionsMenu.addAction(ActionCombine)
         # Cancel current download
         actionsMenu.addSeparator()
-        cancelDownloadAction = QAction("Cancel current process", self)
-        cancelDownloadAction.setShortcut("Ctrl+Alt+C")
-        cancelDownloadAction.triggered.connect(self.OnCancelDownload)
-        actionsMenu.addAction(cancelDownloadAction)
+        self.ActionCancel = QAction("Cancel current process", self)
+        self.ActionCancel.setShortcut("Ctrl+Alt+C")
+        self.ActionCancel.setEnabled(False)
+        self.ActionCancel.triggered.connect(self.OnActionCancel)
+        actionsMenu.addAction(self.ActionCancel)
 
-    def exit_app(self):
-        self.close()
+    #
+    # Action(s) called by menu
+    #
+    def OnActionSettings(self):
+        dlg = util_settings.AppSettings(self.access_token_value)
+        # Center window on custom monitor if activated
+        if len(QtGui.QGuiApplication.screens()) > 1 and self.cfg.StartOnMonitorNumber >= 0:
+            w = dlg.window()
+            w.setGeometry(QtWidgets.QStyle.alignedRect(QtCore.Qt.LeftToRight, QtCore.Qt.AlignCenter, w.size(),
+                                                       QtGui.QGuiApplication.screens()[
+                                                           self.cfg.StartOnMonitorNumber].availableGeometry(), ), )
+        if dlg.exec_():
+            self.cfg.LoadConfigs()
 
-    def BlockUI(self, block=True):
-        self.web.setDisabled(block)
-        if not block:
-            self.progressBarLabel.setText(config.PROGRESSBAR_LABEL_DEFAULT)
-        else:
-            self.progressBarLabel.setText(config.PROGRESSBAR_LABEL_DOWNLOAD)
-            self.ApplyBlockStyle()
-
-    def RequestHeaders(self):
-        HEADERS = config.HEADER_DEFAULT
-        HEADERS.update({config.HEADER_COOKIE_NAME : config.HEADER_COOKIE_ACCESS_TOKEN.format(access_token_value=self.access_token_value)})
-        HEADERS.update({'Content-Type' : 'application/json; charset=utf-8'})
-        return HEADERS
-
-    # Handlers + Helpers
-    def OnSwitchUser(self, clearall, ondonecallback=None):
-        self.web.AddCookieFilterCallbackOnURL(config.UDEMY_MAIN_COURSE_OVERVIEW, config.UDEMY_ACCESS_TOKEN_NAME,
-                                              self.OnTokenFound)
-        self.web.ConnectOnUrlChanged(self.OnURLChanged)
-        self.web.ClearCookiesOnURL(config.UDEMY_MAIN_LOGON_URL, ondonecallback, clearall)
-
-    def OnSwitchUserClicked(self):
+    def OnActionSwitchUser(self):
         ret = QMessageBox.question(self, 'Logoff user',
                                    f"Do you really want to logout from UDemy?\n\nYou must re-start the application and re-login!",
                                    QMessageBox.Yes | QMessageBox.No)
         if ret == QMessageBox.Yes:
-            self.OnSwitchUser(True, self.OnSwitchUserClickedDone)
+            self.SwitchUser(True, self.OnSwitchUserDone)
+
+    def OnActionExit(self):
+        self.close()
+
+    def OnActionGenerateOverview(self):
+        if not self.access_token_value == "":
+            self.overview = overview.Overview(self.access_token_value)
+            self.overview.GenerateOverview(True, True)
+
+    # When user clicked on a course - start download course
+    def OnCourseClicked(self, course_url):
+        log.info(f"Start downloading course from url : {course_url}")
+        self.course_url = course_url
+        self.ResetProgress()
+        Thread = downloader.DownloaderThread(self, course_url, self.access_token_value)
+        Thread._signal_progress_parts.connect(self.OnSignalPartsChanged)
+        Thread._signal_progress.connect(self.OnSignalProgressChanged)
+        Thread._signal_info.connect(self.OnSignalInfo)
+        Thread._signal_error.connect(self.OnSignalError)
+        Thread._signal_canceled.connect(self.OnSignalCanceled)
+        self.ThreadCancelTrigger = Thread.TriggerCancelDownload
+        Thread._signal_done.connect(self.OnSignalCoursesDownloaded)
+        Thread.start()
+        self.BlockUI(True)
+        self.ActionCancel.setEnabled(True)
+
+    def OnActionCombine(self):
+        # Check if FFMPEG is already installed:
+        ffmpeg_util = ffmpeg.FFMPEGUtil()
+        if not ffmpeg_util.Available():
+            QMessageBox.critical(self, "Error!", "FFMPEG is not installed or found.\nPlease set up by opening menu\nFile->Settings : 'FFMPEG path'\n and set it up by clicking the download icon!")
+            return
+        # Ask user to continue cause it could take a long time:
+        ret = QMessageBox.question(self, 'Combine all course videos',
+                                   f"This could take a long time.\nDo you want to continue?",
+                                   QMessageBox.Yes | QMessageBox.No)
+        if ret == QMessageBox.Yes:
+            if not self.access_token_value == "":
+                # Start combine process:
+                log.info(f"Start combining videos...")
+                self.ResetProgress()
+                Thread = ffmpeg.FFMPEGThread(self, self.access_token_value)
+                Thread._signal_progress.connect(self.OnSignalProgressChanged)
+                Thread._signal_info.connect(self.OnSignalInfo)
+                Thread._signal_error.connect(self.OnSignalError)
+                Thread._signal_canceled.connect(self.OnSignalCanceled)
+                self.ThreadCancelTrigger = Thread.TriggerCancelDownload
+                Thread._signal_done.connect(self.OnSignalCoursesCombined)
+                Thread.start()
+                self.BlockUI(True)
+                self.ActionCancel.setEnabled(True)
+
+    def OnActionCancel(self):
+        if not self.ThreadCancelTrigger is None:
+            ret = QMessageBox.question(self, 'Cancel',
+                                       f"Do you want to cancel current process ?",
+                                       QMessageBox.Yes | QMessageBox.No)
+            try:
+                if ret == QMessageBox.Yes:
+                    self.ThreadCancelTrigger()
+                    self.ThreadCancelTrigger = None
+                    self.ActionCancel.setEnabled(False)
+            except Exception as error:
+                pass
+
+    def OnActionJump2MyCourses(self):
+        # Jump to course overview
+        self.BlockUI()
+        self.web.href(const.UDEMY_MAIN_COURSE_OVERVIEW, None, self.OnCourseClicked)
+        self.BlockUI(False)
+
+    #
+    # Slots connected if signal from thread is coming
+    #
+    def OnSignalProgressChanged(self, cnt, idx, max, coursetitle, finishtime):
+        self.progressBar.setValue(int(cnt))
+        self.progressBar.setFormat(
+            f"{cnt}% [{idx}\\{max}] courses loaded from '{coursetitle}', estimated finish time: {finishtime}")
+
+    def OnSignalPartsChanged(self, sectionindex, lectureindex, segment, count):
+        processed = int(segment / count * 100)
+        PartsLabel = const.PROGRESSBAR_LABEL_DOWNLOAD_PARTS.format(Section_Index=sectionindex,
+                                                                   Lecture_Index=lectureindex,
+                                                                   segmentid=segment,
+                                                                   segmentscount=count,
+                                                                   percentdone=processed)
+        self.progressBarLabel.setText(PartsLabel)
+
+    def OnSignalInfo(self, message):
+        log.info(message)
+        self.progressBarLabel.setText(message)
+
+    def OnSignalError(self, message):
+        self.ThreadCancelTrigger = None
+        self.ActionCancel.setEnabled(False)
+        self.ResetProgress()
+        # Show/Log message
+        log.error(message)
+        QMessageBox.critical(self, "An error has been occured", message)
+        # Reload current page
+        self.web.href(self.web.url(), self.OnCoursePageReloaded, self.OnCourseClicked)
+
+    def OnSignalCanceled(self):
+        self.ThreadCancelTrigger = None
+        self.ActionCancel.setEnabled(False)
+        self.ResetProgress()
+        # Reload current page
+        self.web.href(self.web.url(), self.OnCoursePageReloaded, self.OnCourseClicked)
+        # Inform user
+        QMessageBox.warning(self, "Canceled", "Process has been canceled !")
+
+    def OnSignalCoursesDownloaded(self, courseid, coursename):
+        self.ThreadCancelTrigger = None
+        self.ActionCancel.setEnabled(False)
+        self.ResetProgress()
+        # Ask user to archive course
+        ret = QMessageBox.question(self, 'Finished',
+                                   f"Course {coursename} has been downloaded.\nDo you want to archive course ?",
+                                   QMessageBox.Yes | QMessageBox.No)
+        if ret == QMessageBox.Yes:
+            try:
+                # Get more information on course:
+                body = {
+                    "course_id": courseid
+                }
+                req = Request(const.UDEMY_API_ARCHIVE_COURSE)
+                # Build request header
+                RequestHeaders = const.RequestHeaders(self.access_token_value)
+                for key in RequestHeaders:
+                    req.add_header(key, RequestHeaders[key])
+                jsondata = json.dumps(body)
+                jsondataasbytes = jsondata.encode('utf-8')
+                req.add_header('Content-Length', len(jsondataasbytes))
+                self.result = urlopen(req, jsondataasbytes)
+            except Exception as error:
+                log.error(f"An error has been occured on Course {coursename}:")
+                log.error(traceback.format_exc())
+            else:
+                # Reload current page
+                log.info(self.result)
+                self.web.href(self.web.url(), self.OnCoursePageReloaded, self.OnCourseClicked)
+        else:
+            # Reload current page
+            self.web.href(self.web.url(), self.OnCoursePageReloaded, self.OnCourseClicked)
+
+    def OnSignalCoursesCombined(self):
+        self.ThreadCancelTrigger = None
+        self.ActionCancel.setEnabled(False)
+        self.ResetProgress()
+
+    #
+    # Helper functions
+    #
+
+    def BlockUI(self, block=True):
+        self.web.setDisabled(block)
+        if not block:
+            self.progressBarLabel.setText(const.PROGRESSBAR_LABEL_DEFAULT)
+        else:
+            self.progressBarLabel.setText(const.PROGRESSBAR_LABEL_DOWNLOAD)
+            self.ApplyBlockStyle()
+
+    def ResetProgress(self):
+        self.progressBar.setValue(0)
+        self.progressBar.setFormat(const.PROGRESSBAR_LABEL_DEFAULT)
+        self.BlockUI(False)
+
+    def SwitchUser(self, clearall, ondonecallback=None):
+        self.web.AddCookieFilterCallbackOnURL(const.UDEMY_MAIN_COURSE_OVERVIEW, const.UDEMY_ACCESS_TOKEN_NAME,
+                                              self.OnTokenFound)
+        self.web.ConnectOnUrlChanged(self.OnURLChanged)
+        self.web.ClearCookiesOnURL(const.UDEMY_MAIN_LOGON_URL, ondonecallback, clearall)
+
+    def OnSwitchUserDone(self, html):
+        self.close()
 
     def LoadAll(self):
         script = (
-            #"document.documentElement.innerHTML;"
             "document.getElementsByClassName('my-courses__course-card-grid')[0].innerHTML"
         )
         log.info(f"Loadall script:\n{script}")
@@ -238,32 +330,14 @@ class UDemyWebCrawler(QMainWindow):
         alllinks = soup.find_all("a")
         log.info(alllinks)
 
-    def OnConfigChange(self):
-        dlg = UDemyWebCrawlerConfig()
-        if dlg.exec_():
-            self.cfg.LoadConfigs()
-
-    def OnDownloadInstallFFMPEG(self):
-        try:
-            ffmpegutil = util_downloader.FFMPEGUtil(self.access_token_value)
-            ffmpegutil.DownloadAndInstall()
-            QMessageBox.information(self, "Done", "FFMPEG has been sucessfully installed")
-        except Exception as error:
-            log.error(f"An error has been occured on installing FFMPEG:")
-            log.error(traceback.format_exc())
-            QMessageBox.warning(self, "Done", f"An error has been occured on installation of FFMPEG:\n{error}")
-
-    def OnSwitchUserClickedDone(self, html):
-        self.close()
-
-    def OnJump2Overview(self):
-        # Jump to course overview
-        self.web.href(config.UDEMY_MAIN_COURSE_OVERVIEW, None, self.OnCourseClicked)
+    def OnCoursePageReloaded(self, html):
+        self.ThreadCancelTrigger = None
+        self.ApplyStyleChanges()
 
     def ApplyStyleChanges(self):
         script = (
             "var sheet = document.createElement('style');\n"
-            f"sheet.innerHTML = {config.MAIN_STYLE} ;\n"
+            f"sheet.innerHTML = {const.MAIN_STYLE} ;\n"
             "document.body.appendChild(sheet);"
         )
         log.info(f"Script:\n{script}")
@@ -272,7 +346,7 @@ class UDemyWebCrawler(QMainWindow):
     def ApplyBlockStyle(self):
         script = (
             "var sheet = document.createElement('style');\n"
-            f"sheet.innerHTML = {config.BLOCK_STYLE} ;\n"
+            f"sheet.innerHTML = {const.BLOCK_STYLE} ;\n"
             "document.body.appendChild(sheet);"
         )
         log.info(f"Script blockstyle:\n{script}")
@@ -283,150 +357,18 @@ class UDemyWebCrawler(QMainWindow):
         log.info(f"URL has been changed : '{url}' - apply style changes.")
         if "my-courses" in url.toString():
             self.ApplyStyleChanges()
+        elif "login" in url.toString():
+            self.BlockUI(False)
 
     def OnTokenFound(self, TokenName, TokenValue):
         self.access_token_value = TokenValue
         self.access_token = TokenName + "=" + self.access_token_value
         log.info(f"Got access_token : {self.access_token}")
-        self.OnJump2Overview()
+        self.OnActionJump2MyCourses()
 
-    def OnCourseClicked(self, course_url):
-        log.info(f"Start downloading course from url : {course_url}")
-        self.course_url = course_url
-        self.ResetProgress()
-        Thread = DownloaderThread(self, course_url, self.access_token_value)
-        Thread._signal_progress_parts.connect(self.OnPartsDownloaded)
-        Thread._signal_progress.connect(self.OnProgressChanged)
-        Thread._signal_progress_resume_download.connect(self.OnCourseDownloadResumeInProgress)
-        Thread._signal_error.connect(self.OnProgressError)
-        Thread._signal_canceled.connect(self.OnProgressCanceled)
-        self.ThreadCancelTrigger = Thread.TriggerCancelDownload
-        Thread._signal_done.connect(self.OnCourseDownloaded)
-        Thread.start()
-        self.BlockUI(True)
-
-    def OnCancelDownload(self):
-        if not self.ThreadCancelTrigger is None:
-            ret = QMessageBox.question(self, 'Cancel',
-                                       f"Do you want to cancel current process ?",
-                                       QMessageBox.Yes | QMessageBox.No)
-            try:
-                if ret == QMessageBox.Yes:
-                    self.ThreadCancelTrigger()
-                    self.ThreadCancelTrigger = None
-            except Exception as error:
-                pass
-
-    def OnGenerateOverview(self):
-        if not self.access_token_value == "":
-            self.overview = util_downloader.Overview(self.access_token_value)
-            self.overview.GenerateOverview(True, True)
-
-    def OnCombineVideos(self):
-        # Ask user to continue cause it could take a long time:
-        ret = QMessageBox.question(self, 'Combine all course videos',
-                                   f"This could take a long time.\nDo you want to continue?",
-                                   QMessageBox.Yes | QMessageBox.No)
-        if ret == QMessageBox.Yes:
-            if not self.access_token_value == "":
-                # Start combine process:
-                log.info(f"Start combining videos...")
-                self.ResetProgress()
-                Thread =  util_downloader.FFMPEGThread(self, self.access_token_value)
-                Thread._signal_progress.connect(self.OnProgressChanged)
-                Thread._signal_info.connect(self.OnProgressInfo)
-                Thread._signal_error.connect(self.OnProgressError)
-                Thread._signal_canceled.connect(self.OnProgressCanceled)
-                self.ThreadCancelTrigger = Thread.TriggerCancelDownload
-                Thread._signal_done.connect(self.OnCoursesCombined)
-                Thread.start()
-                self.BlockUI(True)
-
-    def OnCoursesCombined(self):
-        self.ThreadCancelTrigger = None
-        self.ResetProgress()
-
-    def OnJump2GeneratedOverview(self):
-        if not self.access_token_value == "":
-            self.overview = util_downloader.Overview(self.access_token_value)
-            overviewfilename = self.cfg.DownloadPath + os.sep + config.COURSE_OVERVIEW_FILE_NAME
-            if not os.path.exists(overviewfilename):
-                self.overview.GenerateOverview(True, False)
-            else:
-                self.overview.GenerateOverview(False, False)
-
-    def ResetProgress(self):
-        self.progressBar.setValue(0)
-        self.progressBar.setFormat(config.PROGRESSBAR_LABEL_DEFAULT)
-        self.BlockUI(False)
-
-    def OnProgressChanged(self, cnt, idx, max, coursetitle, finishtime):
-        self.progressBar.setValue(int(cnt))
-        self.progressBar.setFormat(f"{cnt}% [{idx}\\{max}] courses loaded from '{coursetitle}', estimated finish time: {finishtime}")
-
-    def OnPartsDownloaded(self, chapterid, segment, count):
-        processed = int(segment / count * 100)
-        PartsLabel = config.PROGRESSBAR_LABEL_DOWNLOAD_PARTS.format(Chapter_Index=chapterid, segmentid=segment, segmentscount=count, percentdone=processed)
-        self.progressBarLabel.setText(PartsLabel)
-
-    def OnProgressInfo(self, message):
-        log.info(message)
-        self.progressBarLabel.setText(message)
-
-    def OnCourseDownloadResumeInProgress(self):
-        self.progressBarLabel.setText(config.PROGRESSBAR_LABEL_DOWNLOAD_RESUME)
-
-    def OnProgressCanceled(self):
-        self.ThreadCancelTrigger = None
-        self.ResetProgress()
-        # Reload current page
-        self.web.href(self.web.url(), self.OnCourseDownloadedReloaded, self.OnCourseClicked)
-        # Inform user
-        QMessageBox.warning(self, "Canceled", "Process has been canceled !")
-
-    def OnCourseDownloaded(self, courseid, coursename):
-        self.ThreadCancelTrigger = None
-        self.ResetProgress()
-        # Ask user to archive course
-        ret = QMessageBox.question(self,'Finished', f"Course {coursename} has been downloaded.\nDo you want to archive course ?", QMessageBox.Yes | QMessageBox.No)
-        if ret == QMessageBox.Yes:
-            try:
-                # Get more information on course:
-                body = {
-                    "course_id": courseid
-                }
-                req = Request(config.UDEMY_API_ARCHIVE_COURSE)
-                for key in self.RequestHeaders():
-                    req.add_header(key, self.RequestHeaders()[key])
-                jsondata = json.dumps(body)
-                jsondataasbytes = jsondata.encode('utf-8')
-                req.add_header('Content-Length', len(jsondataasbytes))
-                self.result = urlopen(req, jsondataasbytes)
-            except Exception as error:
-                log.error(f"An error has been occured on Course {coursename}:")
-                log.error(traceback.format_exc())
-            else:
-                # Reload current page
-                log.info(self.result)
-                self.web.href(self.web.url(), self.OnCourseDownloadedReloaded, self.OnCourseClicked)
-        else:
-            # Reload current page
-            self.web.href(self.web.url(), self.OnCourseDownloadedReloaded, self.OnCourseClicked)
-
-    def OnCourseDownloadedReloaded(self, html):
-        self.ThreadCancelTrigger = None
-        self.ApplyStyleChanges()
-
-    def OnProgressError(self, message):
-        self.ThreadCancelTrigger = None
-        self.ResetProgress()
-        # Show/Log message
-        log.error(message)
-        QMessageBox.critical(self, "An error has been occured", message)
-        # Reload current page
-        self.web.href(self.web.url(), self.OnCourseDownloadedReloaded, self.OnCourseClicked)
 
 if __name__ == '__main__':
+    # Activate auto detection of high dpi screens:
     os.environ["QT_AUTO_SCREEN_SCALE_FACTOR"] = "1"
     app = QApplication(sys.argv)
     app.setAttribute(QtCore.Qt.AA_EnableHighDpiScaling)

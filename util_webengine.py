@@ -1,8 +1,8 @@
-import config
-import util_logging as log
+import util_logging as log, util_constants as const
 from PySide2.QtCore import QObject, QUrl
 from PySide2.QtNetwork import QNetworkCookie
 from PySide2.QtWebEngineWidgets import QWebEnginePage, QWebEngineProfile, QWebEngineView
+
 
 # Web page with logging included
 class WebEnginePage(QWebEnginePage):
@@ -16,11 +16,12 @@ class WebEnginePage(QWebEnginePage):
     def acceptNavigationRequest(self, url, navtype, mainframe):
         if navtype == QWebEnginePage.NavigationTypeLinkClicked:
             fullUrl = url.toString()
-            if config.UDEMY_MAIN_COURSE_REDIRECT in fullUrl:
+            if const.UDEMY_MAIN_COURSE_REDIRECT in fullUrl:
                 if not self.OnLinkClickCallback is None:
                     self.OnLinkClickCallback(fullUrl)
                 return False
         return super(WebEnginePage, self).acceptNavigationRequest(url, navtype, mainframe)
+
 
 # Web view with advanced features
 class QWebEngineViewPlus(QWebEngineView):
