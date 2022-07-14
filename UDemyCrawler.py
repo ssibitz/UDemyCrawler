@@ -176,13 +176,18 @@ class UDemyWebCrawler(QMainWindow):
         actionsMenu.addAction(overviewAction)
         # Generate an overview of all courses (html)
         actionsMenu.addSeparator()
-        overviewAction = QAction(QIcon(config.FontAweSomeIcon("table-list.svg")), "Generate an overview of all downloaded courses", self)
+        overviewAction = QAction(QIcon(config.FontAweSomeIcon("table-list.svg")), "Generate an overview (html) of all downloaded courses", self)
         overviewAction.setShortcut("Ctrl+Alt+O")
         overviewAction.triggered.connect(self.OnGenerateOverview)
         actionsMenu.addAction(overviewAction)
+        # Concat all video files to one using ffmpeg
+        actionsMenu.addSeparator()
+        concatAction =  QAction(QIcon(config.FontAweSomeIcon("code-merge.svg")), "Combine all downloaded video courses into one video", self)
+        concatAction.triggered.connect(self.OnCombineVideos)
+        actionsMenu.addAction(concatAction)
         # Cancel current download
         actionsMenu.addSeparator()
-        cancelDownloadAction = QAction("Cancel current download", self)
+        cancelDownloadAction = QAction("Cancel current process", self)
         cancelDownloadAction.setShortcut("Ctrl+Alt+C")
         cancelDownloadAction.triggered.connect(self.OnCancelDownload)
         actionsMenu.addAction(cancelDownloadAction)
@@ -291,18 +296,19 @@ class UDemyWebCrawler(QMainWindow):
         self.ResetProgress()
         Thread = DownloaderThread(self, course_url, self.access_token_value)
         Thread._signal_progress_parts.connect(self.OnPartsDownloaded)
-        Thread._signal_progress.connect(self.OnCourseDownloadProgressChanged)
-        Thread._signal_error.connect(self.OnCourseDownloadError)
-        Thread._signal_canceled.connect(self.OnCourseCanceled)
-        Thread._signal_done.connect(self.OnCourseDownloaded)
+        Thread._signal_progress.connect(self.OnProgressChanged)
+        Thread._signal_progress_resume_download.connect(self.OnCourseDownloadResumeInProgress)
+        Thread._signal_error.connect(self.OnProgressError)
+        Thread._signal_canceled.connect(self.OnProgressCanceled)
         self.ThreadCancelTrigger = Thread.TriggerCancelDownload
+        Thread._signal_done.connect(self.OnCourseDownloaded)
         Thread.start()
         self.BlockUI(True)
 
     def OnCancelDownload(self):
         if not self.ThreadCancelTrigger is None:
-            ret = QMessageBox.question(self, 'Cancel download',
-                                       f"Do you want to cancel downloading course ?",
+            ret = QMessageBox.question(self, 'Cancel',
+                                       f"Do you want to cancel current process ?",
                                        QMessageBox.Yes | QMessageBox.No)
             try:
                 if ret == QMessageBox.Yes:
@@ -315,6 +321,30 @@ class UDemyWebCrawler(QMainWindow):
         if not self.access_token_value == "":
             self.overview = util_downloader.Overview(self.access_token_value)
             self.overview.GenerateOverview(True, True)
+
+    def OnCombineVideos(self):
+        # Ask user to continue cause it could take a long time:
+        ret = QMessageBox.question(self, 'Combine all course videos',
+                                   f"This could take a long time.\nDo you want to continue?",
+                                   QMessageBox.Yes | QMessageBox.No)
+        if ret == QMessageBox.Yes:
+            if not self.access_token_value == "":
+                # Start combine process:
+                log.info(f"Start combining videos...")
+                self.ResetProgress()
+                Thread =  util_downloader.FFMPEGThread(self, self.access_token_value)
+                Thread._signal_progress.connect(self.OnProgressChanged)
+                Thread._signal_info.connect(self.OnProgressInfo)
+                Thread._signal_error.connect(self.OnProgressError)
+                Thread._signal_canceled.connect(self.OnProgressCanceled)
+                self.ThreadCancelTrigger = Thread.TriggerCancelDownload
+                Thread._signal_done.connect(self.OnCoursesCombined)
+                Thread.start()
+                self.BlockUI(True)
+
+    def OnCoursesCombined(self):
+        self.ThreadCancelTrigger = None
+        self.ResetProgress()
 
     def OnJump2GeneratedOverview(self):
         if not self.access_token_value == "":
@@ -330,7 +360,7 @@ class UDemyWebCrawler(QMainWindow):
         self.progressBar.setFormat(config.PROGRESSBAR_LABEL_DEFAULT)
         self.BlockUI(False)
 
-    def OnCourseDownloadProgressChanged(self, cnt, idx, max, coursetitle, finishtime):
+    def OnProgressChanged(self, cnt, idx, max, coursetitle, finishtime):
         self.progressBar.setValue(int(cnt))
         self.progressBar.setFormat(f"{cnt}% [{idx}\\{max}] courses loaded from '{coursetitle}', estimated finish time: {finishtime}")
 
@@ -339,12 +369,20 @@ class UDemyWebCrawler(QMainWindow):
         PartsLabel = config.PROGRESSBAR_LABEL_DOWNLOAD_PARTS.format(Chapter_Index=chapterid, segmentid=segment, segmentscount=count, percentdone=processed)
         self.progressBarLabel.setText(PartsLabel)
 
-    def OnCourseCanceled(self):
+    def OnProgressInfo(self, message):
+        log.info(message)
+        self.progressBarLabel.setText(message)
+
+    def OnCourseDownloadResumeInProgress(self):
+        self.progressBarLabel.setText(config.PROGRESSBAR_LABEL_DOWNLOAD_RESUME)
+
+    def OnProgressCanceled(self):
         self.ThreadCancelTrigger = None
         self.ResetProgress()
         # Reload current page
-        QMessageBox.warning(self, "Canceled", "Download has been canceled !")
         self.web.href(self.web.url(), self.OnCourseDownloadedReloaded, self.OnCourseClicked)
+        # Inform user
+        QMessageBox.warning(self, "Canceled", "Process has been canceled !")
 
     def OnCourseDownloaded(self, courseid, coursename):
         self.ThreadCancelTrigger = None
@@ -379,7 +417,7 @@ class UDemyWebCrawler(QMainWindow):
         self.ThreadCancelTrigger = None
         self.ApplyStyleChanges()
 
-    def OnCourseDownloadError(self, message):
+    def OnProgressError(self, message):
         self.ThreadCancelTrigger = None
         self.ResetProgress()
         # Show/Log message

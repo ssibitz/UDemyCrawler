@@ -1,7 +1,10 @@
+import glob
 import json
 import os
 import pickle
 import re
+import shlex
+import subprocess
 import traceback
 import webbrowser
 import m3u8
@@ -20,6 +23,7 @@ from PySide2.QtWidgets import QMessageBox
 class DownloaderThread(QThread):
     _signal_progress_parts: Union[Signal, Signal] = Signal(int, int, int)
     _signal_progress: Union[Signal, Signal] = Signal(int, int, int, str, str)
+    _signal_progress_resume_download: Union[Signal, Signal] = Signal()
     _signal_error: Union[Signal, Signal] = Signal(str)
     _signal_done: Union[Signal, Signal] = Signal(int, str)
     _signal_canceled: Union[Signal, Signal] = Signal()
@@ -356,17 +360,24 @@ class DownloaderThread(QThread):
     def IgnoreDownloadFileChapterSectionCauseOfResume(self, cnt, LectureIdx, Chapter_Index, SegmentIdx = -1):
         Ignore = False
         if not self.canceled_file is None:
+            self.ResumeOnLastDownload = True
             CancelType = self.canceled_file["CancelType"]
             CanceledLectureIdx = self.canceled_file["LectureIdx"]
             CanceledSegmentIdx = self.canceled_file["SegmentIdx"]
             if "Chapter" in CancelType:
                 if LectureIdx <= CanceledLectureIdx:
                     Ignore = True
+                else:
+                    self.ResumeOnLastDownload = False
             elif "Segment" in CancelType:
                 if LectureIdx < CanceledLectureIdx:
                     Ignore = True
                 elif LectureIdx == CanceledLectureIdx and SegmentIdx <= CanceledSegmentIdx:
                     Ignore = True
+                else:
+                    self.ResumeOnLastDownload = False
+        else:
+            self.ResumeOnLastDownload = False
         return Ignore
     def DownloadVideoParts(self, Lecture_Download_URL, LectureIdx, Chapter, cnt, Chapter_Index, Chapter_Title, Lecture_FileName, Lecture_Download_TYP):
         # Get m3u8 file list
@@ -384,12 +395,15 @@ class DownloaderThread(QThread):
             for segment in m3u8list.segments:
                 segmentid = segmentid + 1
                 Lecture_Download_URL = segment.uri
-                DownloadExt = self.ExtractDownloadExtFromUri(Lecture_Download_URL)
-                DownloadVideoNameSplitted = f"{cnt:04d}-{LectureIdx:04d}-{segmentid:04d}-{Chapter_Index:02d}-{Chapter_Title}-{Lecture_FileName}{DownloadExt}"
+                DownloadVideoFileExt = self.ExtractDownloadExtFromUri(Lecture_Download_URL)
+                DownloadVideoName = f"{self.CurrentLectureIdx:04d}-{segmentid:04d}-{self.CourseTitle}-{Chapter_Title}{DownloadVideoFileExt}"
                 # Download splitted video part
                 if not self.IgnoreDownloadFileChapterSectionCauseOfResume(cnt, LectureIdx, Chapter_Index, segmentid):
-                    self.DoDownloadVideo(Lecture_Download_TYP, Lecture_Download_URL, DownloadVideoNameSplitted)
-                self._signal_progress_parts.emit(Chapter_Index, segmentid, segmentscount)
+                    self.DoDownloadVideo(Lecture_Download_TYP, Lecture_Download_URL, DownloadVideoName)
+                if self.ResumeOnLastDownload:
+                    self._signal_progress_resume_download.emit()
+                else:
+                    self._signal_progress_parts.emit(self.CurrentLectureIdx, segmentid, segmentscount)
                 # Store last segment downloaded
                 self.LastLectureIdx = self.CurrentLectureIdx
                 self.LastSegmentIdx = segmentid
@@ -406,14 +420,10 @@ class DownloaderThread(QThread):
         Lecture_FileName = Chapter["Lecture_FileName"]
         Lecture_Download_URL = Chapter["Lecture_Download_URL"]
         Lecture_Download_TYP = Chapter["Lecture_Download_TYP"]
+        self.ResumeOnLastDownload = False
         # Build name for downloading
-        try:
-            DownloadVideoName = f"{cnt:04d}-{LectureIdx:04d}-{Chapter_Index:02d}-{Chapter_Title}-{Lecture_FileName}"
-        except Exception as error:
-            try:
-                DownloadVideoName = f"{cnt:04d}-{LectureIdx:04d}-00-{Chapter_Title}-{Lecture_FileName}"
-            except Exception as error:
-                DownloadVideoName = f"{cnt:04d}-0000-00-{Chapter_Title}-{Lecture_FileName}"
+        filename, DownloadVideoFileExt = os.path.splitext(Lecture_FileName)
+        DownloadVideoName = f"{self.CurrentLectureIdx:04d}-0000-{self.CourseTitle}-{Chapter_Title}{DownloadVideoFileExt}"
         # Download video by type
         if "MEDIA" in Lecture_Download_TYP and ".m3u8" in Lecture_Download_URL:
             self.DownloadVideoParts(Lecture_Download_URL, LectureIdx, Chapter, cnt, Chapter_Index, Chapter_Title,
@@ -421,6 +431,10 @@ class DownloaderThread(QThread):
         else:
             if not self.IgnoreDownloadFileChapterSectionCauseOfResume(cnt, LectureIdx, Chapter_Index):
                 self.DoDownloadVideo(Lecture_Download_TYP, Lecture_Download_URL, DownloadVideoName)
+            if self.ResumeOnLastDownload:
+                self._signal_progress_resume_download.emit()
+            else:
+                self._signal_progress_parts.emit(self.CurrentLectureIdx, 1, 1)
 
     def ExtractDownloadExtFromUri(self, Lecture_Download_URL):
         DownloadExt = ""
@@ -620,12 +634,14 @@ class FFMPEGUtil():
 
     def FFMPEGUtilFullFilePath(self):
         return self.FFMPEGUtilFullPath()+os.sep+config.FFMPEG_TOOL_FILENAME
+
     def Available(self):
         if not os.path.exists(config.FFMPEGDownloadPath()):
             return False
         if os.path.exists(self.FFMPEGUtilFullFilePath()):
             return False
         return True
+
     def DownloadAndInstall(self):
         # Create ffmpeg download path if not existing
         if not os.path.exists(config.FFMPEGDownloadPath()):
@@ -640,3 +656,101 @@ class FFMPEGUtil():
         zip_ref = zipfile.ZipFile(FFMPEGFileNameFull)
         zip_ref.extractall(config.FFMPEGDownloadPath()) # extract file to dir
         zip_ref.close() # close file
+
+class FFMPEGThread(QThread):
+    _signal_progress: Union[Signal, Signal] = Signal(int, int, int, str, str)
+    _signal_info: Union[Signal, Signal] = Signal(str)
+    _signal_error: Union[Signal, Signal] = Signal(str)
+    _signal_done: Union[Signal, Signal] = Signal()
+    _signal_canceled: Union[Signal, Signal] = Signal()
+
+    def __init__(self, mw, accesstokenvalue):
+        super(FFMPEGThread, self).__init__(mw)
+        self.canceled = False
+        self.access_token_value = accesstokenvalue
+        self.cfg = config.UserConfig()
+        self.overview = Overview(accesstokenvalue)
+        self.ffmpegutil = FFMPEGUtil(accesstokenvalue)
+
+    def calcProcessTime(self, starttime, cur_iter, max_iter):
+        telapsed = time.time() - starttime
+        testimated = (telapsed / cur_iter) * (max_iter)
+        finishtime = starttime + testimated
+        finishtime = dt.datetime.fromtimestamp(finishtime).strftime("%H:%M:%S")  # in time
+        return finishtime
+
+    def TriggerCancelDownload(self):
+        self.canceled = True
+
+    def CombineVideos(self, CourseTitle, CoursePath):
+        CoursePath = CoursePath.replace("\\", "/")
+        PlaylistFileNameFFMPEG = CoursePath + os.sep + config.FFMPEG_PLAYLIST_NAME
+        CombinedFileName = CourseTitle + config.COURSE_COMBINE_FILENAME_EXT
+        # Continue if already existing and config set to continue if
+        if os.path.exists(CoursePath + os.sep + CombinedFileName) and not self.cfg.DownloadCourseVideoAgain:
+            self._signal_info.emit(f"Ignore combining of video for course {CourseTitle} cause of already existing video file")
+            return
+        # Scan for all types of videos and build a combine list for ffmpeg:
+        os.chdir(CoursePath)
+        Videos = []
+        for type in config.COURSE_COMPLETE_SCAN_FOR_FILETYPES:
+            this_type_files = glob.glob(type)
+            Videos += this_type_files
+        # Build FFMPEG playlist
+        self._signal_info.emit(f"Build list with all videos of course '{CourseTitle}'")
+        for Video in Videos:
+            # Append all videos to FFMPEG playlist
+            with open(CoursePath + os.sep + PlaylistFileNameFFMPEG, "a") as playlist:
+                playlist.write(f"file '{Video}'\n")
+        # Execute FFMPEG and concat all files
+        VideoCount = len(Videos)
+        self._signal_info.emit(f"Combining all videos of course '{CourseTitle}' containing {VideoCount:04d} videos - Please wait ...")
+        commandlineparams = config.FFMPEG_COMBINE_PARAMS.format(output=CombinedFileName)
+        ffmpeg_env = os.environ.copy()
+        ffmpeg_env["PATH"] = self.ffmpegutil.FFMPEGUtilFullPath() + ffmpeg_env["PATH"]
+        cmd = shlex.split(commandlineparams)
+        subprocess.call(cmd, env=ffmpeg_env)
+        self._signal_info.emit(f"Combining all videos of course '{CourseTitle}' finished!")
+
+    def run(self):
+        try:
+            start = time.time()
+            # Install latest FFMPEG util if not available
+            self._signal_info.emit("Checking if FFMPEG util ist installed ...")
+            if not self.ffmpegutil.Available:
+                self.ffmpegutil.DownloadAndInstall()
+                self._signal_info.emit("FFMPEG was installed sucessfully !")
+            else:
+                self._signal_info.emit("FFMPEG is installed and ready.")
+            # Load courses
+            self._signal_info.emit("Building list of all downloaded courses ...")
+            Courses = self.overview.BuildCourseInfos()
+            if Courses:
+                CoursesCount = len(Courses)
+                for CourseIdx in range(CoursesCount):
+                    # Current course info
+                    Course = Courses[CourseIdx]
+                    CourseTitle = Course["Title"]
+                    CoursePath = Course["Path"]
+                    # Combine videos in course path
+                    self._signal_info.emit(f"Start combining videos of course '{CourseTitle}' ...")
+                    self.CombineVideos(CourseTitle, CoursePath)
+                    # Update processed videos
+                    processed = int(CourseIdx / CoursesCount * 100)
+                    prstime = self.calcProcessTime(start, CourseIdx+1, CoursesCount)
+                    self._signal_progress.emit(processed, CourseIdx+1, CoursesCount, CourseTitle, prstime)
+                    # Break if user canceled
+                    if self.canceled:
+                        log.warn(f"User has canceled progress !")
+                        break
+        except Exception as error:
+            log.error(f"An error has been occured on combining:")
+            log.error(traceback.format_exc())
+            # Show error to user
+            self._signal_error.emit(repr(error))
+        else:
+            # Download has been finished or canceled:
+            if self.canceled:
+                self._signal_canceled.emit()
+            else:
+                self._signal_done.emit()
