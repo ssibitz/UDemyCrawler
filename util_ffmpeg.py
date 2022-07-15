@@ -1,11 +1,21 @@
-import datetime as dt, glob, os, shlex, subprocess, time, traceback, zipfile, util_logging as log, \
-    util_constants as const, util_downloader as downloader, util_overview as overview, util_settings as settings
+import datetime as dt
+import glob
+import os
+import shlex
+import subprocess
+import time
+import traceback
+import util_constants as const
+import util_downloader as downloader
+import util_logging as log
+import util_overview as overview
+import util_settings as settings
+import zipfile
 from typing import Union
 from PySide2.QtCore import QThread, Signal, QSortFilterProxyModel
 from PySide2.QtGui import QIcon, Qt, QStandardItemModel, QStandardItem
 from PySide2.QtWidgets import QDialog, QDialogButtonBox, QVBoxLayout, QFormLayout, QLabel, QComboBox, QCompleter, \
     QMessageBox
-from UDemyCrawler import UDemyWebCrawler
 
 
 class ExtendedCombo(QComboBox):
@@ -56,7 +66,7 @@ class CourseSelection(QDialog):
 
     def initUI(self):
         # Title and icon
-        self.setWindowTitle("Settings")
+        self.setWindowTitle("Combining videos of a course into one single video")
         self.setWindowIcon(QIcon(const.AppIcon()))
         self.setGeometry(100, 100, 600, 50)
         # Save or cancel button

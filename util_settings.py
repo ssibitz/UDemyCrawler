@@ -121,7 +121,6 @@ class AppSettings(QDialog):
         self.cfg.StartOnMonitorNumber = int(self.cfgStartValue.currentData())
         self.cfg.DownloadPath = self.cfgDownValue.text()
         self.cfg.TempPath = self.cfgTempValue.text()
-        self.cfg.FFMPEGPath = self.cfgFFMPEGValue.text()
         self.cfg.DownloadCourseVideoAgain = self.cfgDownloadCourseVideoAgain.isChecked()
         self.cfg.DownloadCourseVideoCheckFileSize = self.cfgCheckFileSize.isChecked()
         self.cfg.SaveConfigs()
@@ -134,6 +133,8 @@ class AppSettings(QDialog):
 
 class Settings():
     def __init__(self):
+        # Use ffmpeg util to check if installed or not
+        self.ffmpeg_util = ffmpeg.FFMPEGUtil()
         # Set default values
         self.StartOnMonitorNumber = const.USR_CONFIG_START_ON_MONITOR_DEFAULT
         self.DownloadPath = const.USR_CONFIG_DOWNLOAD_PATH_DEFAULT
@@ -160,7 +161,11 @@ class Settings():
                                                                         const.USR_CONFIG_START_ON_MONITOR_DEFAULT))
         self.DownloadPath = self.settings.value(const.USR_CONFIG_DOWNLOAD_PATH, const.USR_CONFIG_DOWNLOAD_PATH_DEFAULT)
         self.TempPath = self.settings.value(const.USR_CONFIG_TEMP_PATH, const.USR_CONFIG_TEMP_PATH_DEFAULT)
-        self.FFMPEGPath = self.settings.value(const.USR_CONFIG_FFMPEG_PATH, const.USR_CONFIG_FFMPEG_PATH_DEFAULT)
+        self.FFMPEGPath = const.USR_CONFIG_FFMPEG_PATH_DEFAULT
+        # Check if FFMPEG ist available (as relative path)
+        if self.ffmpeg_util.Available():
+            path = const.AppResource("")
+            self.FFMPEGPath = os.path.relpath(self.ffmpeg_util.FFMPEGUtilFullPath(), path)
         self.DownloadCourseVideoAgain = self.valueToBool(
             self.settings.value(const.USR_CONFIG_DOWNLOAD_COURSE_AGAIN, const.USR_CONFIG_DOWNLOAD_COURSE_AGAIN_DEFAULT))
         self.DownloadCourseVideoCheckFileSize = self.valueToBool(
@@ -171,7 +176,6 @@ class Settings():
         self.settings.setValue(const.USR_CONFIG_START_ON_MONITOR, self.StartOnMonitorNumber)
         self.settings.setValue(const.USR_CONFIG_DOWNLOAD_PATH, self.DownloadPath)
         self.settings.setValue(const.USR_CONFIG_TEMP_PATH, self.TempPath)
-        self.settings.setValue(const.USR_CONFIG_FFMPEG_PATH, self.FFMPEGPath)
         self.settings.setValue(const.USR_CONFIG_DOWNLOAD_COURSE_AGAIN, self.DownloadCourseVideoAgain)
         self.settings.setValue(const.USR_CONFIG_DOWNLOAD_CHECK_FILESIZE, self.DownloadCourseVideoCheckFileSize)
         self.settings.sync()
