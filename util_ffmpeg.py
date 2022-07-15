@@ -1,7 +1,102 @@
 import datetime as dt, glob, os, shlex, subprocess, time, traceback, zipfile, util_logging as log, \
     util_constants as const, util_downloader as downloader, util_overview as overview, util_settings as settings
 from typing import Union
-from PySide2.QtCore import QThread, Signal
+from PySide2.QtCore import QThread, Signal, QSortFilterProxyModel
+from PySide2.QtGui import QIcon, Qt, QStandardItemModel, QStandardItem
+from PySide2.QtWidgets import QDialog, QDialogButtonBox, QVBoxLayout, QFormLayout, QLabel, QComboBox, QCompleter
+
+from UDemyCrawler import UDemyWebCrawler
+
+
+class ExtendedCombo(QComboBox):
+    def __init__(self, parent=None):
+        super(ExtendedCombo, self).__init__(parent)
+        self.setFocusPolicy(Qt.StrongFocus)
+        self.setEditable(True)
+        self.completer = QCompleter(self)
+        # always show all completions
+        self.completer.setCompletionMode(QCompleter.UnfilteredPopupCompletion)
+        self.pFilterModel = QSortFilterProxyModel(self)
+        self.pFilterModel.setFilterCaseSensitivity(Qt.CaseInsensitive)
+        self.completer.setPopup(self.view())
+        self.setCompleter(self.completer)
+        self.lineEdit().textEdited.connect(self.pFilterModel.setFilterFixedString)
+        self.completer.activated.connect(self.setTextIfCompleterIsClicked)
+
+    def setModel(self, model):
+        super(ExtendedCombo, self).setModel(model)
+        self.pFilterModel.setSourceModel(model)
+        self.completer.setModel(self.pFilterModel)
+
+    def setModelColumn(self, column):
+        self.completer.setCompletionColumn(column)
+        self.pFilterModel.setFilterKeyColumn(column)
+        super(ExtendedCombo, self).setModelColumn(column)
+
+    def view(self):
+        return self.completer.popup()
+
+    def index(self):
+        return self.currentIndex()
+
+    def setTextIfCompleterIsClicked(self, text):
+        if text:
+            index = self.findText(text)
+            self.setCurrentIndex(index)
+
+
+class CourseSelection(QDialog):
+    def __init__(self, mainclass: UDemyWebCrawler):
+        super().__init__()
+        self.cfg = settings.Settings()
+        self.ffmpeg = FFMPEGUtil()
+        self.main = mainclass
+        self.access_token_value = self.main.access_token_value
+        self.overview = overview.Overview(self.access_token_value)
+        self.initUI()
+
+    def initUI(self):
+        # Title and icon
+        self.setWindowTitle("Settings")
+        self.setWindowIcon(QIcon(const.AppIcon()))
+        self.setGeometry(100, 100, 600, 200)
+        # Save or cancel button
+        QBtn = QDialogButtonBox.Ok | QDialogButtonBox.Cancel
+        buttonBox = QDialogButtonBox(QBtn)
+        buttonBox.button(QDialogButtonBox.Ok).clicked.connect(self.Ok)
+        buttonBox.button(QDialogButtonBox.Cancel).clicked.connect(self.Cancel)
+        layout = QVBoxLayout()
+        formLayout = QFormLayout()
+        # List with all available courses
+        CoursesLabel = QLabel("Available courses", self)
+        # Get a list with all courses
+        model = QStandardItemModel()
+        self.CoursesList = self.overview.BuildCourseInfos()
+        if self.CoursesList:
+            CoursesCount = len(self.CoursesList)
+            for CourseIdx in range(CoursesCount):
+                # Current course info
+                Course = self.CoursesList[CourseIdx]
+                item = QStandardItem(Course["Title"])
+                model.setItem(CourseIdx, 0, item)
+        self.Courses = ExtendedCombo()
+        self.Courses.setModel(model)
+        self.Courses.setModelColumn(0)
+        formLayout.addRow(CoursesLabel, self.Courses)
+        # Add to layout
+        layout.addLayout(formLayout)
+        layout.addWidget(buttonBox)
+        self.setLayout(layout)
+
+    def Ok(self):
+        selectionId = self.Courses.currentIndex()
+        if selectionId >= 0:
+            Course = self.CoursesList[selectionId]
+
+        self.accept()
+
+    def Cancel(self):
+        self.reject()
 
 
 class FFMPEGUtil():
@@ -87,7 +182,7 @@ class FFMPEGThread(QThread):
     def CombineVideos(self, CourseTitle, CoursePath):
         PlaylistFileNameFFMPEG = CoursePath + "/" + const.FFMPEG_PLAYLIST_NAME
         CourseTitle = const.ReplaceSpecialChars(CourseTitle)
-        CombinedFileName = f"0000-0000-0000-{CourseTitle}"+const.COURSE_COMBINE_FILENAME_EXT
+        CombinedFileName = f"0000-0000-0000-{CourseTitle}" + const.COURSE_COMBINE_FILENAME_EXT
         CombinedFileNameFull = CoursePath + "/" + CombinedFileName
         # Continue if already existing and config set to continue if
         if os.path.exists(CombinedFileNameFull) and not self.cfg.DownloadCourseVideoAgain:
