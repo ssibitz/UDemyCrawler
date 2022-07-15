@@ -94,11 +94,11 @@ class UDemyWebCrawler(QMainWindow):
         #
         actionsMenu = mainMenu.addMenu("Actions")
         # Reload page
-        ActionJump2MyCourses = QAction(QIcon(const.FontAweSomeIcon("house.svg")), "(Re)load my courses",
+        self.ActionJump2MyCourses = QAction(QIcon(const.FontAweSomeIcon("house.svg")), "(Re)load my courses",
                                        self)
-        ActionJump2MyCourses.setShortcut("Ctrl+Alt+R")
-        ActionJump2MyCourses.triggered.connect(self.OnActionJump2MyCourses)
-        actionsMenu.addAction(ActionJump2MyCourses)
+        self.ActionJump2MyCourses.setShortcut("Ctrl+Alt+R")
+        self.ActionJump2MyCourses.triggered.connect(self.OnActionJump2MyCourses)
+        actionsMenu.addAction(self.ActionJump2MyCourses)
         # Generate an overview of all courses (html)
         # actionsMenu.addSeparator()
         # ActionGenerateOverview = QAction(QIcon(const.FontAweSomeIcon("table-list.svg")),
@@ -108,10 +108,10 @@ class UDemyWebCrawler(QMainWindow):
         # actionsMenu.addAction(ActionGenerateOverview)
         # Concat all video files to one using ffmpeg
         actionsMenu.addSeparator()
-        ActionCombine = QAction(QIcon(const.FontAweSomeIcon("code-merge.svg")),
+        self.ActionCombine = QAction(QIcon(const.FontAweSomeIcon("code-merge.svg")),
                                 "Combine selected downloaded video courses into one video", self)
-        ActionCombine.triggered.connect(self.OnActionCombine)
-        actionsMenu.addAction(ActionCombine)
+        self.ActionCombine.triggered.connect(self.OnActionCombine)
+        actionsMenu.addAction(self.ActionCombine)
         # Cancel current download
         actionsMenu.addSeparator()
         self.ActionCancel = QAction("Cancel current process", self)
@@ -172,6 +172,8 @@ class UDemyWebCrawler(QMainWindow):
         Thread.start()
         self.BlockUI(True)
         self.ActionCancel.setEnabled(True)
+        self.ActionCombine.setEnabled(False)
+        self.ActionJump2MyCourses.setEnabled(False)
 
     def OnActionCombine(self):
         # Check if FFMPEG is already installed:
@@ -207,6 +209,7 @@ class UDemyWebCrawler(QMainWindow):
                 Thread.start()
                 self.BlockUI(True)
                 self.ActionCancel.setEnabled(True)
+                self.ActionJump2MyCourses.setEnabled(False)
 
     def OnActionCancel(self):
         if not self.ThreadCancelTrigger is None:
@@ -218,6 +221,8 @@ class UDemyWebCrawler(QMainWindow):
                     self.ThreadCancelTrigger()
                     self.ThreadCancelTrigger = None
                     self.ActionCancel.setEnabled(False)
+                    self.ActionCombine.setEnabled(True)
+                    self.ActionJump2MyCourses.setEnabled(True)
             except Exception as error:
                 pass
 
@@ -251,6 +256,8 @@ class UDemyWebCrawler(QMainWindow):
     def OnSignalError(self, message):
         self.ThreadCancelTrigger = None
         self.ActionCancel.setEnabled(False)
+        self.ActionCombine.setEnabled(True)
+        self.ActionJump2MyCourses.setEnabled(True)
         self.ResetProgress()
         # Show/Log message
         log.error(message)
@@ -261,6 +268,8 @@ class UDemyWebCrawler(QMainWindow):
     def OnSignalCanceled(self):
         self.ThreadCancelTrigger = None
         self.ActionCancel.setEnabled(False)
+        self.ActionCombine.setEnabled(True)
+        self.ActionJump2MyCourses.setEnabled(True)
         self.ResetProgress()
         # Reload current page
         self.web.href(self.web.url(), self.OnCoursePageReloaded, self.OnCourseClicked)
@@ -270,6 +279,8 @@ class UDemyWebCrawler(QMainWindow):
     def OnSignalCoursesDownloaded(self, courseid, coursename):
         self.ThreadCancelTrigger = None
         self.ActionCancel.setEnabled(False)
+        self.ActionCombine.setEnabled(True)
+        self.ActionJump2MyCourses.setEnabled(True)
         self.ResetProgress()
         # Ask user to archive course
         ret = QMessageBox.question(self, 'Finished',
@@ -304,6 +315,8 @@ class UDemyWebCrawler(QMainWindow):
     def OnSignalCoursesCombined(self):
         self.ThreadCancelTrigger = None
         self.ActionCancel.setEnabled(False)
+        self.ActionCombine.setEnabled(True)
+        self.ActionJump2MyCourses.setEnabled(True)
         self.ResetProgress()
         # Reload current page
         self.web.href(self.web.url(), self.OnCoursePageReloaded, self.OnCourseClicked)

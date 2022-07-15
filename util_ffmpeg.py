@@ -235,7 +235,7 @@ class FFMPEGThread(QThread):
 
     def run(self):
         # Store original path
-        OriginalPath = const.AppResource(".")
+        OriginalPath = const.SingletonPath.getInstance().AppPath()
         try:
             # Get infos from course
             CourseTitle = const.ReplaceSpecialChars(self.course["Title"])

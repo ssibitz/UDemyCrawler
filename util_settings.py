@@ -24,6 +24,9 @@ class AppSettings(QDialog):
         buttonBox.button(QDialogButtonBox.Cancel).clicked.connect(self.Cancel)
         layout = QVBoxLayout()
         formLayout = QFormLayout()
+        # Path of application setting
+        cfgAppPath = QLabel(const.SingletonPath.getInstance().AppPath(), self)
+        formLayout.addRow("App path", cfgAppPath)
         # Start application on monitor
         cfgStartLabel = QLabel("Open on monitor", self)
         self.cfgStartValue = QComboBox()
@@ -149,7 +152,9 @@ class Settings():
 
     def InitSettings(self, recreate=False):
         if self.settings is None:
-            self.settings = QSettings(const.APP_INIFILE_NAME, QSettings.IniFormat)
+            SettingsFilePath = const.SingletonPath.getInstance().AppPath() + "/" + const.APP_INIFILE_NAME
+            log.info(f"(Re)load setting stored in '{SettingsFilePath}'")
+            self.settings = QSettings(SettingsFilePath, QSettings.IniFormat)
         else:
             if recreate:
                 del self.settings

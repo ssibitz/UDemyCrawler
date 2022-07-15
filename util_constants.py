@@ -188,7 +188,6 @@ HEADER_DEFAULT = {
 HEADER_COOKIE_NAME = "Cookie"
 HEADER_COOKIE_ACCESS_TOKEN = "access_token={access_token_value}"
 
-
 def AppResource(resource):
     return path.abspath(path.join(path.dirname(__file__), resource))
 
@@ -218,3 +217,24 @@ def ReplaceSpecialChars(str):
     str = re.sub('[^0-9a-zA-Z]', '_', str)
     return str
 
+# Start-Path as singleton:
+class SingletonPath:
+    __instance = None
+
+    @staticmethod
+    def getInstance():
+        """ Static access method. """
+        if SingletonPath.__instance == None:
+            SingletonPath()
+        return SingletonPath.__instance
+
+    def __init__(self):
+        self.CurrentAppPath = AppResource(".")
+        """ Virtually private constructor. """
+        if SingletonPath.__instance != None:
+            raise Exception("This class is a singleton!")
+        else:
+            SingletonPath.__instance = self
+
+    def AppPath(self):
+        return self.CurrentAppPath.replace("\\", "/")
