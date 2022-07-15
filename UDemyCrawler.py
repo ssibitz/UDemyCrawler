@@ -109,7 +109,7 @@ class UDemyWebCrawler(QMainWindow):
         # Concat all video files to one using ffmpeg
         actionsMenu.addSeparator()
         ActionCombine = QAction(QIcon(const.FontAweSomeIcon("code-merge.svg")),
-                                "Combine all downloaded video courses into one video", self)
+                                "Combine selected downloaded video courses into one video", self)
         ActionCombine.triggered.connect(self.OnActionCombine)
         actionsMenu.addAction(ActionCombine)
         # Cancel current download
@@ -174,14 +174,32 @@ class UDemyWebCrawler(QMainWindow):
                                  "FFMPEG is not installed or found.\nPlease set up by opening menu\nFile->Settings : 'FFMPEG path'\n and set it up by clicking the download icon!")
             return
         # Show dialog with course selection
-        dlg = ffmpeg.CourseSelection(self)
+        dlg = ffmpeg.CourseSelection(self.access_token_value)
         # Center window on custom monitor if activated
         if len(QtGui.QGuiApplication.screens()) > 1 and self.cfg.StartOnMonitorNumber >= 0:
             w = dlg.window()
             w.setGeometry(QtWidgets.QStyle.alignedRect(QtCore.Qt.LeftToRight, QtCore.Qt.AlignCenter, w.size(),
                                                        QtGui.QGuiApplication.screens()[
                                                            self.cfg.StartOnMonitorNumber].availableGeometry(), ), )
-        dlg.exec_()
+        if dlg.exec_():
+            ret = QMessageBox.question(self, 'Combine all course videos',
+                                       f"This could take a long time.\nDo you want to continue?",
+                                       QMessageBox.Yes | QMessageBox.No)
+            if ret == QMessageBox.Yes:
+                # Start combine process:
+                course = dlg.Selected
+                log.info(f"Start combining videos for course ")
+                self.ResetProgress()
+                Thread = ffmpeg.FFMPEGThread(self, self.access_token_value, course)
+                Thread._signal_progress.connect(self.OnSignalProgressChanged)
+                Thread._signal_info.connect(self.OnSignalInfo)
+                Thread._signal_error.connect(self.OnSignalError)
+                Thread._signal_canceled.connect(self.OnSignalCanceled)
+                self.ThreadCancelTrigger = Thread.TriggerCancelDownload
+                Thread._signal_done.connect(self.OnSignalCoursesCombined)
+                Thread.start()
+                self.BlockUI(True)
+                self.ActionCancel.setEnabled(True)
 
     def OnActionCancel(self):
         if not self.ThreadCancelTrigger is None:
@@ -280,6 +298,10 @@ class UDemyWebCrawler(QMainWindow):
         self.ThreadCancelTrigger = None
         self.ActionCancel.setEnabled(False)
         self.ResetProgress()
+        # Reload current page
+        self.web.href(self.web.url(), self.OnCoursePageReloaded, self.OnCourseClicked)
+        # Inform user
+        QMessageBox.warning(self, "Done.", "Video has been combined into one !")
 
     #
     # Helper functions

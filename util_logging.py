@@ -5,7 +5,7 @@ def InitLogging():
     # Remove old log file on startup
     if os.path.exists(const.APP_LOGFILE_NAME):
         os.remove(const.APP_LOGFILE_NAME)
-    log.basicConfig(filename=const.APP_LOGFILE_NAME, encoding='utf-8', level=log.INFO,
+    log.basicConfig(filename=const.APP_LOGFILE_NAME, encoding='utf-8', level=log.DEBUG,
                     format='%(asctime)s %(levelname)-8s %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
 
 

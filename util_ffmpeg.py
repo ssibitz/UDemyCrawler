@@ -3,8 +3,8 @@ import datetime as dt, glob, os, shlex, subprocess, time, traceback, zipfile, ut
 from typing import Union
 from PySide2.QtCore import QThread, Signal, QSortFilterProxyModel
 from PySide2.QtGui import QIcon, Qt, QStandardItemModel, QStandardItem
-from PySide2.QtWidgets import QDialog, QDialogButtonBox, QVBoxLayout, QFormLayout, QLabel, QComboBox, QCompleter
-
+from PySide2.QtWidgets import QDialog, QDialogButtonBox, QVBoxLayout, QFormLayout, QLabel, QComboBox, QCompleter, \
+    QMessageBox
 from UDemyCrawler import UDemyWebCrawler
 
 
@@ -44,22 +44,21 @@ class ExtendedCombo(QComboBox):
             index = self.findText(text)
             self.setCurrentIndex(index)
 
-
 class CourseSelection(QDialog):
-    def __init__(self, mainclass: UDemyWebCrawler):
+    def __init__(self, accesstokenvalue):
         super().__init__()
         self.cfg = settings.Settings()
-        self.ffmpeg = FFMPEGUtil()
-        self.main = mainclass
-        self.access_token_value = self.main.access_token_value
+        self.ffmpeg_util = FFMPEGUtil()
+        self.access_token_value = accesstokenvalue
         self.overview = overview.Overview(self.access_token_value)
+        self.Selected = None
         self.initUI()
 
     def initUI(self):
         # Title and icon
         self.setWindowTitle("Settings")
         self.setWindowIcon(QIcon(const.AppIcon()))
-        self.setGeometry(100, 100, 600, 200)
+        self.setGeometry(100, 100, 600, 50)
         # Save or cancel button
         QBtn = QDialogButtonBox.Ok | QDialogButtonBox.Cancel
         buttonBox = QDialogButtonBox(QBtn)
@@ -91,9 +90,10 @@ class CourseSelection(QDialog):
     def Ok(self):
         selectionId = self.Courses.currentIndex()
         if selectionId >= 0:
-            Course = self.CoursesList[selectionId]
-
-        self.accept()
+            self.Selected = self.CoursesList[selectionId]
+            self.accept()
+        else:
+            QMessageBox.critical(self, "Error occured", "Please select a course from the list!")
 
     def Cancel(self):
         self.reject()
@@ -162,12 +162,13 @@ class FFMPEGThread(QThread):
     _signal_done: Union[Signal, Signal] = Signal()
     _signal_canceled: Union[Signal, Signal] = Signal()
 
-    def __init__(self, mw, accesstokenvalue):
+    def __init__(self, mw, accesstokenvalue, selectedcourse):
         super(FFMPEGThread, self).__init__(mw)
         self.canceled = False
         self.cfg = settings.Settings()
         self.overview = overview.Overview(accesstokenvalue)
         self.ffmpegutil = FFMPEGUtil()
+        self.course = selectedcourse
 
     def calcProcessTime(self, starttime, cur_iter, max_iter):
         telapsed = time.time() - starttime
@@ -223,28 +224,15 @@ class FFMPEGThread(QThread):
 
     def run(self):
         try:
-            start = time.time()
-            # Build a list with all courses by path's in download path
-            self._signal_info.emit("Building list of all downloaded courses ...")
-            Courses = self.overview.BuildCourseInfos()
-            if Courses:
-                CoursesCount = len(Courses)
-                for CourseIdx in range(CoursesCount):
-                    # Current course info
-                    Course = Courses[CourseIdx]
-                    CourseTitle = Course["Title"]
-                    CoursePath = Course["Path"]
-                    # Combine videos in course path
-                    self._signal_info.emit(f"Start combining videos of course '{CourseTitle}' ...")
-                    self.CombineVideos(CourseTitle, CoursePath)
-                    # Update processed videos
-                    processed = int(CourseIdx / CoursesCount * 100)
-                    prstime = self.calcProcessTime(start, CourseIdx + 1, CoursesCount)
-                    self._signal_progress.emit(processed, CourseIdx + 1, CoursesCount, CourseTitle, prstime)
-                    # Break if user canceled
-                    if self.canceled:
-                        log.warn(f"User has canceled progress !")
-                        break
+            # Get infos from course
+            CourseTitle = const.ReplaceSpecialChars(self.course["Title"])
+            CoursePath = self.course["Path"]
+            # Combine videos in course path
+            self._signal_info.emit(f"Start combining videos of course '{CourseTitle}' ...")
+            self.CombineVideos(CourseTitle, CoursePath)
+            # Break if user canceled
+            if self.canceled:
+                log.warn(f"User has canceled progress !")
         except Exception as error:
             log.error(f"An error has been occured on combining:")
             log.error(traceback.format_exc())

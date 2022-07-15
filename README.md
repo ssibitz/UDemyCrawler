@@ -1,5 +1,4 @@
-# UDemyCrawler | Udemy Course Downloader (GUI)
-Udemy crawler for backup courses to local drive and view the videos of the course(s) offline.
+# UDemyCrawler | Udemy Course Downloader (Python GUI)
 - A desktop application for downloading Udemy Courses to a local path. 
 
 <img alt="MainScreen" height="300" src="/preview/MainScreen.png?raw=true"/>
@@ -42,9 +41,9 @@ https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-lat
 ## ***Features***
 - Log into your UDemy account by using your email/password as on the website
 - Showing a simple view of "My learning"
-- Simple user settings
-- By clicking on a course the course will be downloaded.
+- Simple user settings which also allows to automatically download/unzip latest version of FFMPEG 
+- By clicking on a course the course will be downloaded:<br/>
+ All <b>non protected</b> videos and articles as html files will be downloaded  
 - Download can be canceled and resumed later
 - Generate a playlist with all videos
-- Generate an overview page of all downloaded courses as html
 - Combine all videos of a course into one video - so its easier to view on eg a TV over a NAS

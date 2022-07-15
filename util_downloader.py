@@ -1,10 +1,12 @@
 import json, os, re, traceback, m3u8, time, datetime as dt, util_logging as log, util_constants as const, util_settings, \
-    util_overview as overview
+    util_overview as overview, util_uncrypt as encrypt
 from typing import Union
 from urllib.parse import urlparse, parse_qs
+import requests
 from PySide2.QtCore import QThread, Signal
 from urllib.request import Request, urlopen
 from pprint import pformat
+from Crypto.Cipher import AES
 
 
 class DownloaderThread(QThread):
@@ -44,9 +46,12 @@ class DownloaderThread(QThread):
         if os.path.exists(self.CanceledFileName()):
             os.remove(self.CanceledFileName())
 
-    def SaveJSONCanceledState(self, data):
-        with open(self.CanceledFileName(), 'w') as json_file:
+    def SaveJSON(self, file, data):
+        with open(file, 'w') as json_file:
             json.dump(data, json_file)
+
+    def SaveJSONCanceledState(self, data):
+        self.SaveJSON(self.CanceledFileName(), data)
 
     def LoadJSONCanceledState(self):
         data = None
@@ -133,7 +138,6 @@ class DownloaderThread(QThread):
         res = urlopen(req).read()
         # Convert to json
         CourseInfo = json.loads(res.decode("utf-8"))
-        log.debug(pformat(CourseInfo))
         Title = CourseInfo[const.UDEMY_API_FIELD_COURSE_TITLE]
         log.info(f"Title:\n{Title}")
         Description = CourseInfo[const.UDEMY_API_FIELD_COURSE_DESCRIPTION]
@@ -141,7 +145,13 @@ class DownloaderThread(QThread):
         Image = CourseInfo[const.UDEMY_API_FIELD_COURSE_IMAGE]
         log.info(f"Image:\n{Image}")
         # Build course path, prepare preview image and store description
-        return self.BuildCoursePathInfo(CourseId, Title, Description, Image)
+        CoursePath = self.BuildCoursePathInfo(CourseId, Title, Description, Image).replace("\\", "/")
+        # Save course JSON info (full)
+        log.debug("--- JSON CourseInfo:")
+        log.debug(pformat(CourseInfo))
+        self.SaveJSON(CoursePath + '/' + const.APP_REST_COURSE_INFO_FILE_NAME, CourseInfo)
+        # Return Course path
+        return CoursePath
 
     def BuildCoursePathInfo(self, CourseId, Title, Description, Image):
         log.info(f"Preparing download for course with id '{CourseId}', '{Title}'")
@@ -222,6 +232,21 @@ class DownloaderThread(QThread):
         self.Lecture_FileName = ""
         self.Lecture_Download_URL = ""
         self.Lecture_Download_TYP = ""
+        self.Lecture_Media_License_Token = ""
+
+    def SaveArticle(self, CourseObject):
+        if not CourseObject is None:
+            Lecture_Title = const.ReplaceSpecialChars(CourseObject["title"])
+            Lecture_Index = CourseObject["object_index"]
+            Chapter_Title = const.ReplaceSpecialChars(self.Chapter_Title)
+            if "asset" in CourseObject:
+                asset = CourseObject["asset"]
+                if "body" in asset:
+                    ArticleFileName = f"{self.Chapter_Index:04d}-{Lecture_Index:04d}-0000__{self.CourseTitle}__{Chapter_Title}__{Lecture_Title}.html"
+                    ArticleFileNameFull = self.CoursePath + "/" + ArticleFileName
+                    body = CourseObject["asset"]["body"]
+                    with open(ArticleFileNameFull, "w", encoding="utf-8") as article:
+                        article.write(body)
 
     def ParseLecture(self, CourseObject):
         self.Lecture_Title = CourseObject["title"]
@@ -259,12 +284,12 @@ class DownloaderThread(QThread):
                                 self.Lecture_Download_TYP = "MEDIA"
                                 self.Lecture_Download_URL = self.GetMediaVideoWithHighestResolution(mediasources)
                                 MediaFound = True
-                            elif MediaType in ["application/x-mpegURL"]:
+                            elif MediaType in ["application/dash+xml"]:
                                 self.Lecture_Download_TYP = "MEDIA"
                                 self.Lecture_Download_URL = MediaURL
+                                if "media_license_token" in assets:
+                                    self.Lecture_Media_License_Token = assets["media_license_token"]
                                 MediaFound = True
-                            elif MediaType in ["application/dash+xml"]:  # Types to ignore
-                                pass
                             else:
                                 log.warn(f"Unknown media type '{MediaType}' with url {MediaURL}")
                         if MediaFound:
@@ -272,11 +297,12 @@ class DownloaderThread(QThread):
             # Check if url has been found - otherwise log warning
             if self.Lecture_Download_URL == "":
                 asset_type = CourseObject["asset"]["asset_type"]
-                # Raise an error if type is not in:
-                if not asset_type in ["Article"]:
+                # If asset type is article only store content in an html file, but don't download any content
+                if asset_type in ["Article"]:
+                    self.SaveArticle(CourseObject)
+                else:
                     errormessage = f"No video url found for '{self.Lecture_FileName}' / {asset_type}"
                     log.error(errormessage)
-                    # raise Exception(errormessage)
 
     def LoadAllCourseLectures(self, CourseId):
         url = const.UDEMY_API_URL_COURSE_CHAPTERS.format(CourseId=CourseId)
@@ -288,8 +314,9 @@ class DownloaderThread(QThread):
         # Convert to json
         CourseDetailsJSON = json.loads(res.decode("utf-8"))
         # output readable
-        log.info("--- JSON CourseDetails:")
-        log.info(pformat(CourseDetailsJSON))
+        log.debug("--- JSON CourseDetails:")
+        log.debug(pformat(CourseDetailsJSON))
+        self.SaveJSON(self.CoursePath + '/' + const.APP_REST_COURSE_DETAILS_FILE_NAME, CourseDetailsJSON)
         # Parse and prepare video list:
         self.InitCurrentChapter()
         self.InitCurrentLecture()
@@ -314,22 +341,23 @@ class DownloaderThread(QThread):
                              "Lecture_Title": const.ReplaceSpecialChars(self.Lecture_Title),
                              "Lecture_FileName": self.Lecture_FileName,
                              "Lecture_Download_URL": self.Lecture_Download_URL,
-                             "Lecture_Download_TYP": self.Lecture_Download_TYP
-                            }
+                             "Lecture_Download_TYP": self.Lecture_Download_TYP,
+                             "Lecture_Media_License_Token" : self.Lecture_Media_License_Token
+                             }
                         )
                 else:
                     log.warn(f"Unknown course type '{CourseObjectType}'")
         return VideosList
 
-
     def DoDownloadVideo(self, type, url, downloadvideoname):
         log.info(f"Try to download video (type={type}) '{downloadvideoname}' from '{url}' ")
         if not url == "":
             self.downloader.DownloadFileFast(url, self.CoursePath + os.sep + downloadvideoname)
-            # Append video to playlist
-            with open(self.PlaylistFileName, "a") as playlist:
-                playlist.write(f"#EXTINF:-1,{downloadvideoname}\n")
-                playlist.write(f"{downloadvideoname}\n")
+            # Append video to playlist if filetype is video:
+            if self.ExtractDownloadExtFromUri(url) in [".mp4", ".mov"]:
+                with open(self.PlaylistFileName, "a") as playlist:
+                    playlist.write(f"#EXTINF:-1,{downloadvideoname}\n")
+                    playlist.write(f"{downloadvideoname}\n")
         else:
             log.info(f"Ignore no downloadable chapter (information only) !")
 
@@ -370,7 +398,8 @@ class DownloaderThread(QThread):
             self.ResumeOnLastDownload = False
         return Ignore
 
-    def DownloadVideoParts(self, Lecture_Download_URL, LectureIdx, Chapter, cnt, Chapter_Index, Chapter_Title,
+    # TODO: Encrypt video parts
+    def DownloadVideoPartsBug(self, Lecture_Download_URL, LectureIdx, Chapter, cnt, Chapter_Index, Chapter_Title,
                            Lecture_FileName, Lecture_Download_TYP, Lecture_Index, Lecture_Title):
         # Get m3u8 file list
         m3u8list = m3u8.load(Lecture_Download_URL)
@@ -404,6 +433,59 @@ class DownloaderThread(QThread):
                     self.SegmentCanceled()
                     break
 
+    # TODO: Keep currently
+    def DownloadVideoPartsBuggy(self, Lecture_Download_URL, LectureIdx, Chapter, cnt, Chapter_Index, Chapter_Title,
+                           Lecture_FileName, Lecture_Download_TYP, Lecture_Index, Lecture_Title, Lecture_Media_License_Token):
+        ReqHeaders = const.RequestHeaders(self.access_token_value)
+        with requests.session() as req:
+            # Get m3u8 file list
+            m3u8list = m3u8.load(Lecture_Download_URL, headers=ReqHeaders)
+            # If playlist contains other playlists with different resolutions get highest
+            if m3u8list.is_variant:
+                bestresplaylisturl = self.GetPlaylistwithhighestResolution(m3u8list.playlists).uri
+                m3u8list = m3u8.load(bestresplaylisturl, headers=ReqHeaders)
+            # Get keys
+            key_url = m3u8list.keys[0].absolute_uri
+            key = []
+            # req = Request(url=key_url, headers=ReqHeaders)
+            # res = urlopen(req).read()
+            # for chunk in res:
+            # #for chunk in requests.get(url=key_url, stream=True, headers=ReqHeaders, method="get"):
+            #     key.append(chunk)
+            # Prepare crypto
+            lines = str(m3u8list.segments[0]).split('\n')
+            IVAsString = lines[0].split("IV=")[1]
+            # convert into bytes and remove the first 2 chars
+            IVAsString = IVAsString.replace("0x", "").split(",")[0]
+            IV = bytes.fromhex(IVAsString)
+            #cipher = AES.new(key[0], AES.MODE_CBC, IV=IV)
+            # Init crypto
+            cipher = AES.new(Lecture_Media_License_Token, AES.MODE_CBC, IV = IV)
+            # Get each segment of m3u8-file
+            for single_segment in m3u8list.segments:
+                # Get correct URL for ts-file
+                download_url = single_segment.absolute_uri
+                # Counter 1..n
+                num = 1
+                # Write bytes into a file
+                with open(self.CoursePath + '/Filename.part' + str(num) + '.ts', 'wb') as seg_ts:
+                    # Get all chunks of current part-file
+                    for chunk in requests.request(url=download_url, stream=True, headers=ReqHeaders, method="get"):
+                        # decrypt it and write it into the file
+                        seg_ts.write(cipher.decrypt(chunk))
+                    # Counter increase for the next part number
+                    num += 1
+
+    # TODO: Download encrypted
+    def DownloadVideoParts(self, Lecture_Download_URL, LectureIdx, Chapter, cnt, Chapter_Index, Chapter_Title,
+                           Lecture_FileName, Lecture_Download_TYP, Lecture_Index, Lecture_Title, Lecture_Media_License_Token):
+        # Currently not possible to download crypted video's, so download mpl-file instead until encryption is possible/supported!
+        DownloadVideoName = f"{Chapter_Index:04d}-{Lecture_Index:04d}-0000__{self.CourseTitle}__{Chapter_Title}__{Lecture_Title}.mpd"
+        # Download splitted video part
+        self.DoDownloadVideo(Lecture_Download_TYP, Lecture_Download_URL, DownloadVideoName)
+        # Update progress
+        self._signal_progress_parts.emit(Chapter_Index, Lecture_Index, 1, 1)
+
     def DownloadVideoChapter(self, LectureIdx, Chapter):
         cnt = Chapter["cnt"]
         Chapter_Index = Chapter["Chapter_Index"]
@@ -414,14 +496,15 @@ class DownloaderThread(QThread):
         Lecture_FileName = Chapter["Lecture_FileName"]
         Lecture_Download_URL = Chapter["Lecture_Download_URL"]
         Lecture_Download_TYP = Chapter["Lecture_Download_TYP"]
+        Lecture_Media_License_Token = Chapter["Lecture_Media_License_Token"]
         self.ResumeOnLastDownload = False
         # Build name for downloading
         filename, DownloadVideoFileExt = os.path.splitext(Lecture_FileName)
         DownloadVideoName = f"{Chapter_Index:04d}-{Lecture_Index:04d}-0000__{self.CourseTitle}__{Chapter_Title}__{Lecture_Title}{DownloadVideoFileExt}"
         # Download video by type
-        if "MEDIA" in Lecture_Download_TYP and ".m3u8" in Lecture_Download_URL:
+        if "MEDIA" in Lecture_Download_TYP and ".mpd" in Lecture_Download_URL:
             self.DownloadVideoParts(Lecture_Download_URL, LectureIdx, Chapter, cnt, Chapter_Index, Chapter_Title,
-                                    Lecture_FileName, Lecture_Download_TYP, Lecture_Index, Lecture_Title)
+                                    Lecture_FileName, Lecture_Download_TYP, Lecture_Index, Lecture_Title, Lecture_Media_License_Token)
         else:
             if not self.IgnoreDownloadFileChapterSectionCauseOfResume(cnt, LectureIdx, Chapter_Index):
                 self.DoDownloadVideo(Lecture_Download_TYP, Lecture_Download_URL, DownloadVideoName)
@@ -436,6 +519,8 @@ class DownloaderThread(QThread):
             DownloadExt = ".ts"
         elif ".mp4" in Lecture_Download_URL:
             DownloadExt = ".mp4"
+        elif ".mov" in Lecture_Download_URL:
+            DownloadExt = ".mov"
         return DownloadExt
 
 

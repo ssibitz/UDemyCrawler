@@ -4,14 +4,14 @@ import pickle
 import re
 import traceback
 import webbrowser
-from pprint import pformat
-from urllib.request import Request, urlopen
-
-from PySide2.QtWidgets import QMessageBox
-
 import util_constants as const
 import util_logging as log
 import util_settings
+from pprint import pformat
+from urllib.request import Request, urlopen
+from PySide2.QtWidgets import QMessageBox
+
+
 
 
 class Overview():

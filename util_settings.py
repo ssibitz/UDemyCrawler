@@ -49,7 +49,15 @@ class AppSettings(QDialog):
             self.StatusBarLabel = QLabel(const.USR_CONFIG_STATUSBAR_DEFAULT_LABEL_NOT_FOUND)
             self.StatusBarLabel.setStyleSheet("QLabel { color : red }")
         formLayout.addRow("", self.StatusBarLabel)
-        # Download path
+        # Temp path
+        ActionSettingsChoooseTempPath = QAction(QIcon(const.FontAweSomeIcon("folder-open.svg")), "", self)
+        ActionSettingsChoooseTempPath.setToolTip("Choose temp path for temporary downloads and fast processing of video files")
+        ActionSettingsChoooseTempPath.triggered.connect(self.OnActionChooseTempPath)
+        self.cfgTempValue = QLineEdit()
+        self.cfgTempValue.addAction(ActionSettingsChoooseTempPath, QLineEdit.TrailingPosition)
+        self.cfgTempValue.setText(self.cfg.TempPath)
+        formLayout.addRow("Temp path", self.cfgTempValue)
+        # Course (download) path
         ActionSettingsChooseDownloadPath = QAction(QIcon(const.FontAweSomeIcon("folder-open.svg")), "", self)
         ActionSettingsChooseDownloadPath.setToolTip("Choose courses path")
         ActionSettingsChooseDownloadPath.triggered.connect(self.OnActionChooseDownloadPath)
@@ -75,6 +83,11 @@ class AppSettings(QDialog):
         if not dir == "":
             self.cfgDownValue.setText(dir)
 
+    def OnActionChooseTempPath(self):
+        dir = str(QFileDialog.getExistingDirectory(self, "Choose directory"))
+        if not dir == "":
+            self.cfgTempValue.setText(dir)
+
     def OnActionDownloadInstallFFMPEG(self):
         Thread = ffmpeg.FFMPEGDownloadInstallThread(self, self.access_token_value)
         Thread._signal_info.connect(self.OnSignalInfo)
@@ -94,7 +107,7 @@ class AppSettings(QDialog):
         self.BlockUI(False)
         log.error(message)
         self.StatusBarLabel.setText(message)
-        QMessageBox.critical("Error occured", message)
+        QMessageBox.critical(self, "Error occured", message)
 
     def OnSignalFFMPEGDownloadedInstalled(self, dir):
         self.BlockUI(False)
@@ -107,6 +120,7 @@ class AppSettings(QDialog):
     def Save(self):
         self.cfg.StartOnMonitorNumber = int(self.cfgStartValue.currentData())
         self.cfg.DownloadPath = self.cfgDownValue.text()
+        self.cfg.TempPath = self.cfgTempValue.text()
         self.cfg.FFMPEGPath = self.cfgFFMPEGValue.text()
         self.cfg.DownloadCourseVideoAgain = self.cfgDownloadCourseVideoAgain.isChecked()
         self.cfg.DownloadCourseVideoCheckFileSize = self.cfgCheckFileSize.isChecked()
@@ -123,6 +137,7 @@ class Settings():
         # Set default values
         self.StartOnMonitorNumber = const.USR_CONFIG_START_ON_MONITOR_DEFAULT
         self.DownloadPath = const.USR_CONFIG_DOWNLOAD_PATH_DEFAULT
+        self.TempPath = const.USR_CONFIG_TEMP_PATH_DEFAULT
         self.FFMPEGPath = const.USR_CONFIG_FFMPEG_PATH_DEFAULT
         self.DownloadCourseVideoAgain = const.USR_CONFIG_DOWNLOAD_COURSE_AGAIN_DEFAULT
         self.DownloadCourseVideoCheckFileSize = const.USR_CONFIG_DOWNLOAD_CHECK_FILESIZE_DEFAULT
@@ -144,6 +159,7 @@ class Settings():
         self.StartOnMonitorNumber = self.valueToInt(self.settings.value(const.USR_CONFIG_START_ON_MONITOR,
                                                                         const.USR_CONFIG_START_ON_MONITOR_DEFAULT))
         self.DownloadPath = self.settings.value(const.USR_CONFIG_DOWNLOAD_PATH, const.USR_CONFIG_DOWNLOAD_PATH_DEFAULT)
+        self.TempPath = self.settings.value(const.USR_CONFIG_TEMP_PATH, const.USR_CONFIG_TEMP_PATH_DEFAULT)
         self.FFMPEGPath = self.settings.value(const.USR_CONFIG_FFMPEG_PATH, const.USR_CONFIG_FFMPEG_PATH_DEFAULT)
         self.DownloadCourseVideoAgain = self.valueToBool(
             self.settings.value(const.USR_CONFIG_DOWNLOAD_COURSE_AGAIN, const.USR_CONFIG_DOWNLOAD_COURSE_AGAIN_DEFAULT))
@@ -154,6 +170,7 @@ class Settings():
     def SaveConfigs(self):
         self.settings.setValue(const.USR_CONFIG_START_ON_MONITOR, self.StartOnMonitorNumber)
         self.settings.setValue(const.USR_CONFIG_DOWNLOAD_PATH, self.DownloadPath)
+        self.settings.setValue(const.USR_CONFIG_TEMP_PATH, self.TempPath)
         self.settings.setValue(const.USR_CONFIG_FFMPEG_PATH, self.FFMPEGPath)
         self.settings.setValue(const.USR_CONFIG_DOWNLOAD_COURSE_AGAIN, self.DownloadCourseVideoAgain)
         self.settings.setValue(const.USR_CONFIG_DOWNLOAD_CHECK_FILESIZE, self.DownloadCourseVideoCheckFileSize)

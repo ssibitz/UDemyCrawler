@@ -6,6 +6,8 @@ USR_CONFIG_START_ON_MONITOR = "StartOnMonitorNumber"
 USR_CONFIG_START_ON_MONITOR_DEFAULT = -1
 USR_CONFIG_DOWNLOAD_PATH = "DownloadPath"
 USR_CONFIG_DOWNLOAD_PATH_DEFAULT = "C:\\UDEMY"
+USR_CONFIG_TEMP_PATH = "TempPath"
+USR_CONFIG_TEMP_PATH_DEFAULT = ""
 USR_CONFIG_DOWNLOAD_COURSE_AGAIN = "DownloadCourseVideoAgain"
 USR_CONFIG_DOWNLOAD_COURSE_AGAIN_DEFAULT = False
 USR_CONFIG_DOWNLOAD_CHECK_FILESIZE = "CheckFileSize"
@@ -22,14 +24,17 @@ FFMPEG_TOOL_PATH = "\\ffmpeg-master-latest-win64-gpl\\bin"
 FFMPEG_TOOL_FILENAME = "ffmpeg.exe"
 FFMPEG_PLAYLIST_NAME = "playlist.txt"
 COURSE_COMBINE_FILENAME_EXT = ".mp4"
-FFMPEG_COMBINE_PARAMS = FFMPEG_TOOL_FILENAME + " -f concat -i " + FFMPEG_PLAYLIST_NAME + " -c copy {output}"
+FFMPEG_COMBINE_PARAMS = FFMPEG_TOOL_FILENAME + " -f concat -safe 0 -i " + FFMPEG_PLAYLIST_NAME + " -c copy {output}"
 
 # Application
 APP_NAME = "UDemyCrawler"
-APP_TITLE = "UDemy course crawler - Copyright(c) 2022 by Stefan Sibitz"
+APP_VERSION = "1.1.0"
+APP_TITLE = f"UDemy course crawler V{APP_VERSION} - Copyright(c) 2022 by Stefan Sibitz"
 APP_LOGFILE_NAME = f"{APP_NAME}.log"
 APP_INIFILE_NAME = f"{APP_NAME}.ini"
 APP_ICON_NAME = f"res\\{APP_NAME}.ico"
+APP_REST_COURSE_DETAILS_FILE_NAME = f"{APP_NAME}_CourseDetails.json"
+APP_REST_COURSE_INFO_FILE_NAME = f"{APP_NAME}_CourseInfo.json"
 PROGRESSBAR_LABEL_DEFAULT = "Click on a course to download."
 PROGRESSBAR_LABEL_DOWNLOAD = "Course will be downloaded. Please wait!"
 PROGRESSBAR_LABEL_DOWNLOAD_PARTS = "Course section {Section_Index:02d}/{Lecture_Index:02d}. will be downloaded: Part {segmentid:04d} of {segmentscount:04d} [{percentdone}%]"
@@ -165,7 +170,7 @@ UDEMY_MAIN_LOGON_URL = UDEMY_MAIN_URL + "/join/login-popup/?skip_suggest=1&local
 UDEMY_MAIN_COURSE_OVERVIEW = UDEMY_MAIN_URL + "/home/my-courses/"
 UDEMY_MAIN_COURSE_REDIRECT = UDEMY_MAIN_URL + "/course-dashboard-redirect/"
 UDEMY_API_URL_COURSE_DETAILS = UDEMY_MAIN_URL + "/api-2.0/courses/{CourseId}/" + f"?fields[course]={UDEMY_API_FIELD_COURSE_TITLE},{UDEMY_API_FIELD_COURSE_DESCRIPTION},{UDEMY_API_FIELD_COURSE_IMAGE}&fields[locale]={UDEMY_API_FIELD_LOCALE}"
-UDEMY_API_URL_COURSE_CHAPTERS = UDEMY_MAIN_URL + '/api-2.0/courses/{CourseId}/cached-subscriber-curriculum-items?fields[asset]=results,external_url,time_estimation,download_urls,slide_urls,filename,asset_type,captions,stream_urls,body,media_sources&fields[chapter]=object_index,title,sort_order&fields[lecture]=id,title,object_index,asset,supplementary_assets,view_html&page_size=10000'
+UDEMY_API_URL_COURSE_CHAPTERS = UDEMY_MAIN_URL + '/api-2.0/courses/{CourseId}/cached-subscriber-curriculum-items?fields[asset]=results,external_url,time_estimation,download_urls,slide_urls,filename,asset_type,captions,stream_urls,body,media_sources,media_license_token&fields[chapter]=object_index,title,sort_order&fields[lecture]=id,title,object_index,asset,supplementary_assets,view_html&page_size=10000'
 UDEMY_API_MY_COURSES = UDEMY_MAIN_URL + f"/api-2.0/users/me/subscribed-courses/?ordering=-last_accessed&fields[course]={UDEMY_API_FIELD_COURSE_TITLE},{UDEMY_API_FIELD_COURSE_DESCRIPTION},{UDEMY_API_FIELD_COURSE_IMAGE}&is_archived=false&page_size=10000"
 UDEMY_API_ARCHIVE_COURSE = UDEMY_MAIN_URL + "/api-2.0/users/me/archived-courses/?fields[course]=archive_time"
 UDEMY_API_COURSE_TITLE = UDEMY_MAIN_URL + "/api-2.0/courses/{CourseId}/?fields[course]=title"
@@ -210,6 +215,6 @@ def RequestHeaders(accesstokenvalue):
 def ReplaceSpecialChars(str):
     for char in COURSE_NAME_SPECIAL_CHARS_REPLACE:
         str = str.replace(char, COURSE_NAME_SPECIAL_CHARS_REPLACE[char])
-    str = re.sub('[^0-9a-zA-Z]+', '+', str)
+    str = re.sub('[^0-9a-zA-Z]', '_', str)
     return str
 
