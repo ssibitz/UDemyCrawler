@@ -1,4 +1,4 @@
-import json, os, re, traceback, m3u8, time, datetime as dt, util_logging as log, util_constants as const, util_settings, \
+import json, os, re, traceback, m3u8, time, datetime as dt, fastdl, util_logging as log, util_constants as const, util_settings, \
     util_overview as overview, util_uncrypt as encrypt
 from typing import Union
 from urllib.parse import urlparse, parse_qs
@@ -601,8 +601,9 @@ class Downloader():
 
     def DownloadFileFast(self, url, filename):
         if self.DownloadFileAgainFromURL(url, filename):
-            resp = urlopen(url)
-            respHtml = resp.read()
-            binfile = open(filename, "wb")
-            binfile.write(respHtml)
-            binfile.close()
+            # Extract dest filename and path
+            DownloadFileName = os.path.basename(filename)
+            DownloadFilePath = os.path.dirname(filename)
+            log.debug(f"Start downloading '{DownloadFileName}' file with fastdl")
+            file_path = fastdl.download(url, fname=DownloadFileName, dir_prefix=DownloadFilePath, force_download=True)
+            log.debug(f"Finished downloading file '{DownloadFileName}' to '{DownloadFilePath}' [{file_path}]")
