@@ -80,6 +80,7 @@ class CourseSelection(QDialog):
         CoursesLabel = QLabel("Available courses", self)
         # Get a list with all courses
         model = QStandardItemModel()
+        model.clear()
         self.CoursesList = self.overview.BuildCourseInfos()
         if self.CoursesList:
             CoursesCount = len(self.CoursesList)
@@ -233,6 +234,8 @@ class FFMPEGThread(QThread):
         self._signal_info.emit(f"Combining all videos of course '{CourseTitle}' finished!")
 
     def run(self):
+        # Store original path
+        OriginalPath = const.AppResource(".")
         try:
             # Get infos from course
             CourseTitle = const.ReplaceSpecialChars(self.course["Title"])
@@ -254,3 +257,5 @@ class FFMPEGThread(QThread):
                 self._signal_canceled.emit()
             else:
                 self._signal_done.emit()
+        # Re-store original path
+        os.chdir(OriginalPath)

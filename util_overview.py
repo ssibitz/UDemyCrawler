@@ -55,6 +55,8 @@ class Overview():
         return CourseInfo
 
     def BuildCourseInfos(self):
+        self.cfg.InitSettings(True)
+        self.cfg.LoadConfigs()
         CourseFolders = [f.path for f in os.scandir(self.cfg.DownloadPath) if f.is_dir()]
         Courses = []
         for CourseFolder in CourseFolders:
