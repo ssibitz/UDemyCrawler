@@ -43,7 +43,8 @@ https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-lat
 - Showing a simple view of "My learning"
 - Simple user settings which also allows to automatically download/unzip latest version of FFMPEG 
 - By clicking on a course the course will be downloaded:<br/>
- All <b>non protected</b> videos and articles as html files will be downloaded  
+ All <b>non protected</b> videos and articles as html files will be downloaded
+- Before the course will be downloaded it checks if the course contains <b>protected</b> videos.<br/>You can cancel here if you don't won't to download only the <b>non protected</b> parts of the course!
 - Download can be canceled and resumed later
 - Generate a playlist with all videos
 - Combine all videos of a course into one video - so its easier to view on eg a TV over a NAS

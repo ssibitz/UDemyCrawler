@@ -60,6 +60,26 @@ class DownloaderThread(QThread):
                 data = json.load(json_file)
         return data
 
+    def IsCourseProtected(self):
+        # Result
+        Protected = False
+        # Parse url
+        parsed_url = urlparse(self.course_url)
+        self.CourseId = parse_qs(parsed_url.query)[const.UDEMY_API_FIELD_COURSE_ID][0]
+        # Prepare course path
+        self.CoursePath = self.PrepareCourseDownload(self.CourseId)
+        # Load a list of all lectures of the current course
+        LecturesList = self.LoadAllCourseLectures(self.CourseId)
+        # Load all chapter videos
+        LecturesCount = len(LecturesList)
+        for LectureIdx in range(LecturesCount):
+            Chapter = LecturesList[LectureIdx]
+            if "Lecture_Protected" in Chapter:
+                if Chapter["Lecture_Protected"]:
+                    Protected = True
+                    break
+        return Protected
+
     def run(self):
         try:
             # Parse url
@@ -333,6 +353,9 @@ class DownloaderThread(QThread):
                     self.ParseLecture(CourseObject)
                     if not self.Lecture_Download_URL == "":
                         cnt = cnt + 1
+                        Lecture_Protected = False
+                        if "MEDIA" in self.Lecture_Download_TYP and ".mpd" in self.Lecture_Download_URL:
+                            Lecture_Protected = True
                         VideosList.append(
                             {"cnt": cnt,
                              "Chapter_Index": self.Chapter_Index,
@@ -342,7 +365,8 @@ class DownloaderThread(QThread):
                              "Lecture_FileName": self.Lecture_FileName,
                              "Lecture_Download_URL": self.Lecture_Download_URL,
                              "Lecture_Download_TYP": self.Lecture_Download_TYP,
-                             "Lecture_Media_License_Token" : self.Lecture_Media_License_Token
+                             "Lecture_Media_License_Token" : self.Lecture_Media_License_Token,
+                             "Lecture_Protected" : Lecture_Protected
                              }
                         )
                 else:

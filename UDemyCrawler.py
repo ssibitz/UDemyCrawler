@@ -162,6 +162,13 @@ class UDemyWebCrawler(QMainWindow):
         Thread._signal_canceled.connect(self.OnSignalCanceled)
         self.ThreadCancelTrigger = Thread.TriggerCancelDownload
         Thread._signal_done.connect(self.OnSignalCoursesDownloaded)
+        # Pre-check if course is protected:
+        if Thread.IsCourseProtected():
+            ret = QMessageBox.question(self, 'Protection',
+                                       f"Course is protected!\nOnly the non protected parts will be downloaded.\n\nDo you want to continue ?",
+                                       QMessageBox.Yes | QMessageBox.No)
+            if not ret == QMessageBox.Yes:
+                return
         Thread.start()
         self.BlockUI(True)
         self.ActionCancel.setEnabled(True)
