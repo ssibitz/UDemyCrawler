@@ -1,3 +1,4 @@
+import os
 import re
 from os import path
 
@@ -201,7 +202,8 @@ def AppIcon():
 
 
 def FFMPEGDownloadPath():
-    return AppResource(f"FFMPEG\\")
+    path = SingletonPath.getInstance().AppPath() + "/FFMPEG/"
+    return  path
 
 
 def RequestHeaders(accesstokenvalue):
@@ -229,7 +231,11 @@ class SingletonPath:
         return SingletonPath.__instance
 
     def __init__(self):
-        self.CurrentAppPath = AppResource(".")
+        # Set application path to APPDATA path. If special path not exists create it:
+        AppDataPath = os.getenv('APPDATA').replace("\\", "/") + '/' + APP_NAME
+        if not os.path.exists(AppDataPath):
+            os.makedirs(AppDataPath)
+        self.CurrentAppPath = AppDataPath
         """ Virtually private constructor. """
         if SingletonPath.__instance != None:
             raise Exception("This class is a singleton!")

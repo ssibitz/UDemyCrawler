@@ -115,7 +115,7 @@ class AppSettings(QDialog):
     def OnSignalFFMPEGDownloadedInstalled(self, dir):
         self.BlockUI(False)
         if not dir == "":
-            path = const.AppResource("")
+            path = const.SingletonPath.getInstance().AppPath()
             relpath = os.path.relpath(dir, path)
             self.cfgFFMPEGValue.setText(relpath)
             QMessageBox.information(self, "Done", "FFMPEG sucessfully downloaded and installed !")
@@ -169,7 +169,7 @@ class Settings():
         self.FFMPEGPath = const.USR_CONFIG_FFMPEG_PATH_DEFAULT
         # Check if FFMPEG ist available (as relative path)
         if self.ffmpeg_util.Available():
-            path = const.AppResource("")
+            path = const.SingletonPath.getInstance().AppPath()
             self.FFMPEGPath = os.path.relpath(self.ffmpeg_util.FFMPEGUtilFullPath(), path)
         self.DownloadCourseVideoAgain = self.valueToBool(
             self.settings.value(const.USR_CONFIG_DOWNLOAD_COURSE_AGAIN, const.USR_CONFIG_DOWNLOAD_COURSE_AGAIN_DEFAULT))
