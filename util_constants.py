@@ -29,7 +29,7 @@ FFMPEG_COMBINE_PARAMS = FFMPEG_TOOL_FILENAME + " -f concat -safe 0 -i " + FFMPEG
 
 # Application
 APP_NAME = "UDemyCrawler"
-APP_VERSION = "1.5.0"
+APP_VERSION = "1.6.0"
 APP_TITLE = f"UDemy course crawler V{APP_VERSION} - Copyright(c) 2022 by Stefan Sibitz"
 APP_LOGFILE_NAME = f"{APP_NAME}.log"
 APP_INIFILE_NAME = f"{APP_NAME}.ini"
