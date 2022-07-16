@@ -135,6 +135,7 @@ class UDemyWebCrawler(QMainWindow):
         if dlg.exec_():
             self.cfg.LoadConfigs()
         self.BlockUI(False)
+        self.OnActionJump2MyCourses()
 
     def OnActionSwitchUser(self):
         self.BlockUI(True)

@@ -1,10 +1,10 @@
-import os.path, util_logging as log, util_constants as const, util_ffmpeg as ffmpeg
-import subprocess
-
+from __future__ import annotations
 from PySide2.QtCore import QSettings
 from PySide2.QtGui import QIcon
 from PySide2.QtWidgets import QDialog, QDialogButtonBox, QVBoxLayout, QFormLayout, QLabel, QComboBox, QCheckBox, \
     QLineEdit, QFileDialog, QAction, QMessageBox
+import os.path, util_logging as log, util_constants as const, util_ffmpeg as ffmpeg
+import subprocess
 
 
 class AppSettings(QDialog):
@@ -51,10 +51,10 @@ class AppSettings(QDialog):
         self.cfgFFMPEGValue.addAction(ActionSettingsDownloadInstallFFMPEG, QLineEdit.TrailingPosition)
         formLayout.addRow("FFMPEG path", self.cfgFFMPEGValue)
         # Add status label for FFMPEG
-        self.StatusBarLabel = QLabel(const.USR_CONFIG_STATUSBAR_DEFAULT_LABEL_INSTALLED)
+        self.StatusBarLabel = QLabel("")
         formLayout.addRow("", self.StatusBarLabel)
         # Course (download) path
-        ActionSettingsChooseDownloadPath = QAction(QIcon(const.FontAweSomeIcon("folder-open.svg")), "", self)
+        ActionSettingsChooseDownloadPath = QAction(QIcon(const.FontAweSomeIcon("folder-plus.svg")), "", self)
         ActionSettingsChooseDownloadPath.setToolTip("Choose courses path")
         ActionSettingsChooseDownloadPath.triggered.connect(self.OnActionChooseDownloadPath)
         self.cfgDownValue = QLineEdit()
@@ -72,10 +72,10 @@ class AppSettings(QDialog):
         self.setLayout(layout)
 
     def OnActionOpenAppPath(self):
-        AppPath = const.GlobalPaths().AppDataPath()
+        AppPath = os.path.dirname(os.path.abspath(self.cfg.SettingsFilePath))
         if not AppPath == "":
-            cmd = f""
-            subprocess.Popen(fr'explorer /select,"{AppPath}"')
+            cmd = fr'explorer "{AppPath}"'
+            subprocess.Popen(cmd)
 
     def OnActionChooseDownloadPath(self):
         dir = str(QFileDialog.getExistingDirectory(self, "Choose directory"))
@@ -95,6 +95,7 @@ class AppSettings(QDialog):
 
     def BlockUI(self, block=True):
         self.setEnabled(not block)
+        self.StatusBarLabel.setEnabled(True)
 
     def OnSignalInfo(self, message):
         log.info(message)
@@ -110,7 +111,6 @@ class AppSettings(QDialog):
         self.BlockUI(False)
         if not dir == "":
             self.Save(True)
-            self.Load()
             QMessageBox.information(self, "Done", "FFMPEG sucessfully downloaded and installed !")
 
     def Load(self):
@@ -125,8 +125,11 @@ class AppSettings(QDialog):
         # FFMPEG
         self.cfgFFMPEGValue.setText(self.cfg.FFMPEGPath)
         if self.cfgFFMPEGValue.text() == "":
-            self.StatusBarLabel = QLabel(const.USR_CONFIG_STATUSBAR_DEFAULT_LABEL_NOT_FOUND)
+            self.StatusBarLabel.setText(const.USR_CONFIG_STATUSBAR_DEFAULT_LABEL_NOT_FOUND)
             self.StatusBarLabel.setStyleSheet("QLabel { color : red }")
+        else:
+            self.StatusBarLabel.setText(const.USR_CONFIG_STATUSBAR_DEFAULT_LABEL_INSTALLED)
+            self.StatusBarLabel.setStyleSheet("QLabel { color : black }")
         # Download path
         self.cfgDownValue.setText(self.cfg.DownloadPath)
         # Download again
@@ -143,6 +146,8 @@ class AppSettings(QDialog):
         log.info(f"Configuration has been saved !")
         if not saveonly:
             self.accept()
+        else:
+            self.Load()
 
     def Cancel(self):
         self.reject()
@@ -152,7 +157,7 @@ class Settings():
     __instance = None
 
     @staticmethod
-    def getInstance():
+    def getInstance() -> Settings:
         """ Static access method. """
         if Settings.__instance == None:
             Settings()
@@ -176,16 +181,18 @@ class Settings():
         if self.ffmpeg_util.Available():
             path = const.GlobalPaths().AppDataPath()
             self.FFMPEGPath = os.path.relpath(self.ffmpeg_util.FFMPEGUtilFullPath(), path)
+        else:
+            self.FFMPEGPath = const.USR_CONFIG_FFMPEG_PATH_DEFAULT
         # Init setting
+        self.SettingsFilePath = const.GlobalPaths().AppDataPath() + "/" + const.APP_INIFILE_NAME
         self.settings = None
         self.InitSettings()
         self.LoadConfigs()
 
     def InitSettings(self, recreate=False):
         if self.settings is None:
-            SettingsFilePath = const.GlobalPaths().AppDataPath() + "/" + const.APP_INIFILE_NAME
-            log.info(f"(Re)load setting stored in '{SettingsFilePath}'")
-            self.settings = QSettings(SettingsFilePath, QSettings.IniFormat)
+            log.info(f"(Re)load setting stored in '{self.SettingsFilePath}'")
+            self.settings = QSettings(self.SettingsFilePath, QSettings.IniFormat)
         else:
             if recreate:
                 del self.settings
@@ -198,10 +205,11 @@ class Settings():
         self.DownloadPath = self.settings.value(const.USR_CONFIG_DOWNLOAD_PATH, const.USR_CONFIG_DOWNLOAD_PATH_DEFAULT)
         # self.TempPath = self.settings.value(const.USR_CONFIG_TEMP_PATH, const.USR_CONFIG_TEMP_PATH_DEFAULT)
         # Check if FFMPEG ist available (as relative path)
-        self.FFMPEGPath = const.USR_CONFIG_FFMPEG_PATH_DEFAULT
         if self.ffmpeg_util.Available():
             path = const.GlobalPaths().AppDataPath()
             self.FFMPEGPath = os.path.relpath(self.ffmpeg_util.FFMPEGUtilFullPath(), path)
+        else:
+            self.FFMPEGPath = const.USR_CONFIG_FFMPEG_PATH_DEFAULT
         self.DownloadCourseVideoAgain = self.valueToBool(
             self.settings.value(const.USR_CONFIG_DOWNLOAD_COURSE_AGAIN, const.USR_CONFIG_DOWNLOAD_COURSE_AGAIN_DEFAULT))
         self.DownloadCourseVideoCheckFileSize = self.valueToBool(
@@ -227,5 +235,5 @@ class Settings():
 
 
 # Global access settings via singleton function
-def GlobalSettings():
+def GlobalSettings() -> Settings:
     return Settings.getInstance()

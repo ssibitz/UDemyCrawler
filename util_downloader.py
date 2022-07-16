@@ -1,5 +1,6 @@
 import json, os, re, traceback, m3u8, time, datetime as dt, fastdl, util_logging as log, util_constants as const, util_settings, \
     util_overview as overview, util_uncrypt as encrypt
+from pathlib import Path
 from typing import Union
 from urllib.parse import urlparse, parse_qs
 import requests
@@ -599,11 +600,18 @@ class Downloader():
         else:
             return True
 
-    def DownloadFileFast(self, url, filename):
+    def DownloadFileFast(self, url, filename, extract = False):
         if self.DownloadFileAgainFromURL(url, filename):
             # Extract dest filename and path
             DownloadFileName = os.path.basename(filename)
             DownloadFilePath = os.path.dirname(filename)
+            ExtractFilePath = ""
+            if extract:
+                ExtractFilePath = DownloadFilePath
             log.debug(f"Start downloading '{DownloadFileName}' file with fastdl")
-            file_path = fastdl.download(url, fname=DownloadFileName, dir_prefix=DownloadFilePath, force_download=True)
+            if extract:
+                file_path = fastdl.download(url, fname=DownloadFileName, dir_prefix=DownloadFilePath,
+                                        force_download=extract, force_extraction=extract, extract=extract, extract_dir=ExtractFilePath)
+            else:
+                file_path = fastdl.download(url, fname=DownloadFileName, dir_prefix=DownloadFilePath)
             log.debug(f"Finished downloading file '{DownloadFileName}' to '{DownloadFilePath}' [{file_path}]")

@@ -10,7 +10,6 @@ import util_downloader as downloader
 import util_logging as log
 import util_overview as overview
 import util_settings as settings
-import zipfile
 from typing import Union
 from PySide2.QtCore import QThread, Signal, QSortFilterProxyModel
 from PySide2.QtGui import QIcon, Qt, QStandardItemModel, QStandardItem
@@ -144,18 +143,11 @@ class FFMPEGDownloadInstallThread(QThread):
             # Create ffmpeg download path if not existing
             if not os.path.exists(const.FFMPEGDownloadPath()):
                 os.makedirs(const.FFMPEGDownloadPath())
-            # Delete old downloaded file to be sure that using always latest version:
+            # Build full filename
             FFMPEGFileNameFull = const.FFMPEGDownloadPath() + os.sep + const.FFMPEG_DOWNLOAD_FILENAME
-            if os.path.exists(FFMPEGFileNameFull):
-                os.remove(FFMPEGFileNameFull)
-            # Download latest version of ffmpeg
-            self._signal_info.emit("Downloading latest version of FFMPEG")
-            self.downloader.DownloadFileFast(const.FFMPEG_DOWNLOAD_LATEST_VERSION_URL, FFMPEGFileNameFull)
-            # Unzip file intoto current directory
-            self._signal_info.emit("Unpacking latest version of FFMPEG")
-            zip_ref = zipfile.ZipFile(FFMPEGFileNameFull)
-            zip_ref.extractall(const.FFMPEGDownloadPath())  # extract file to dir
-            zip_ref.close()  # close file
+            # Download and extract latest version of ffmpeg
+            self._signal_info.emit("Downloading and extracting latest version of FFMPEG")
+            self.downloader.DownloadFileFast(const.FFMPEG_DOWNLOAD_LATEST_VERSION_URL, FFMPEGFileNameFull, True)
             self._signal_info.emit("FFMPEG is now available !")
         except Exception as error:
             log.error(f"An error has been occured on downloading/installing ffmpeg:")
