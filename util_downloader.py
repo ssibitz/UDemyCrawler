@@ -24,7 +24,7 @@ class DownloaderThread(QThread):
         self.access_token_value = accesstokenvalue
         self.LastLectureIdx = -1
         self.LastSegmentIdx = -1
-        self.cfg = util_settings.Settings()
+        self.cfg = util_settings.GlobalSettings()
         self.overview = overview.Overview(accesstokenvalue)
         self.downloader = Downloader(accesstokenvalue)
 
@@ -550,7 +550,7 @@ class DownloaderThread(QThread):
 
 class Downloader():
     def __init__(self, accesstokenvalue):
-        self.cfg = util_settings.Settings()
+        self.cfg = util_settings.GlobalSettings()
         self.access_token_value = accesstokenvalue
 
     def DownloadFileAgainFromURL(self, url, filename):

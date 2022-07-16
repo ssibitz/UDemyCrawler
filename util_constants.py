@@ -189,6 +189,7 @@ HEADER_DEFAULT = {
 HEADER_COOKIE_NAME = "Cookie"
 HEADER_COOKIE_ACCESS_TOKEN = "access_token={access_token_value}"
 
+
 def AppResource(resource):
     return path.abspath(path.join(path.dirname(__file__), resource))
 
@@ -202,8 +203,8 @@ def AppIcon():
 
 
 def FFMPEGDownloadPath():
-    path = SingletonPath.getInstance().AppPath() + "/FFMPEG/"
-    return  path
+    path = GlobalPaths().AppDataPath() + "/FFMPEG/"
+    return path
 
 
 def RequestHeaders(accesstokenvalue):
@@ -213,34 +214,40 @@ def RequestHeaders(accesstokenvalue):
     HEADERS.update({'Content-Type': 'application/json; charset=utf-8'})
     return HEADERS
 
+
 def ReplaceSpecialChars(str):
     for char in COURSE_NAME_SPECIAL_CHARS_REPLACE:
         str = str.replace(char, COURSE_NAME_SPECIAL_CHARS_REPLACE[char])
     str = re.sub('[^0-9a-zA-Z]', '_', str)
     return str
 
+
+
 # Start-Path as singleton:
-class SingletonPath:
+class SingletonPaths:
     __instance = None
 
     @staticmethod
     def getInstance():
         """ Static access method. """
-        if SingletonPath.__instance == None:
-            SingletonPath()
-        return SingletonPath.__instance
+        if SingletonPaths.__instance == None:
+            SingletonPaths()
+        return SingletonPaths.__instance
 
     def __init__(self):
-        # Set application path to APPDATA path. If special path not exists create it:
-        AppDataPath = os.getenv('APPDATA').replace("\\", "/") + '/' + APP_NAME
-        if not os.path.exists(AppDataPath):
-            os.makedirs(AppDataPath)
-        self.CurrentAppPath = AppDataPath
         """ Virtually private constructor. """
-        if SingletonPath.__instance != None:
+        if SingletonPaths.__instance != None:
             raise Exception("This class is a singleton!")
         else:
-            SingletonPath.__instance = self
+            SingletonPaths.__instance = self
+        # Set application path to APPDATA path. If special path not exists create it:
+        self.CurrentAppPath = (os.getenv('APPDATA') + '/' + APP_NAME).replace("\\", "/")
+        if not os.path.exists(self.CurrentAppPath):
+            os.makedirs(self.CurrentAppPath)
 
-    def AppPath(self):
-        return self.CurrentAppPath.replace("\\", "/")
+    def AppDataPath(self):
+        return self.CurrentAppPath
+
+# Global access paths via singleton function
+def GlobalPaths():
+    return SingletonPaths.getInstance()

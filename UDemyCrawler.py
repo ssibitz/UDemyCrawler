@@ -25,7 +25,7 @@ class UDemyWebCrawler(QMainWindow):
         self.access_token = ""
         self.access_token_value = ""
         # Init used classes
-        self.cfg = util_settings.Settings()
+        self.cfg = util_settings.GlobalSettings()
         self.web = webengine.QWebEngineViewPlus()
         # Load mysources page of udemy
         self.SwitchUser(False, None)
@@ -71,23 +71,23 @@ class UDemyWebCrawler(QMainWindow):
         fileMenu = mainMenu.addMenu("File")
         # -User settings
         fileMenu.addSeparator()
-        ActionSettings = QAction(QIcon(const.FontAweSomeIcon("wrench.svg")), "Settings", self)
-        ActionSettings.setShortcut("Ctrl+Alt+S")
-        ActionSettings.triggered.connect(self.OnActionSettings)
-        fileMenu.addAction(ActionSettings)
+        self.ActionSettings = QAction(QIcon(const.FontAweSomeIcon("wrench.svg")), "Settings", self)
+        self.ActionSettings.setShortcut("Ctrl+Alt+S")
+        self.ActionSettings.triggered.connect(self.OnActionSettings)
+        fileMenu.addAction(self.ActionSettings)
         # Log off currrent user + exit
         fileMenu.addSeparator()
-        ActionSwitchUser = QAction(QIcon(const.FontAweSomeIcon("right-from-bracket.svg")),
+        self.ActionSwitchUser = QAction(QIcon(const.FontAweSomeIcon("right-from-bracket.svg")),
                                    "Log off current user + Quit application", self)
-        ActionSwitchUser.setShortcut("Ctrl+U")
-        ActionSwitchUser.triggered.connect(self.OnActionSwitchUser)
-        fileMenu.addAction(ActionSwitchUser)
+        self.ActionSwitchUser.setShortcut("Ctrl+U")
+        self.ActionSwitchUser.triggered.connect(self.OnActionSwitchUser)
+        fileMenu.addAction(self.ActionSwitchUser)
         # Exit
         fileMenu.addSeparator()
-        ActionExit = QAction("Exit", self)
-        ActionExit.setShortcut("Ctrl+X")
-        ActionExit.triggered.connect(self.OnActionExit)
-        fileMenu.addAction(ActionExit)
+        self.ActionExit = QAction("Exit", self)
+        self.ActionExit.setShortcut("Ctrl+X")
+        self.ActionExit.triggered.connect(self.OnActionExit)
+        fileMenu.addAction(self.ActionExit)
 
         #
         # --- Actions menu
@@ -124,6 +124,7 @@ class UDemyWebCrawler(QMainWindow):
     # Action(s) called by menu
     #
     def OnActionSettings(self):
+        self.BlockUI(True)
         dlg = util_settings.AppSettings(self.access_token_value)
         # Center window on custom monitor if activated
         if len(QtGui.QGuiApplication.screens()) > 1 and self.cfg.StartOnMonitorNumber >= 0:
@@ -133,13 +134,16 @@ class UDemyWebCrawler(QMainWindow):
                                                            self.cfg.StartOnMonitorNumber].availableGeometry(), ), )
         if dlg.exec_():
             self.cfg.LoadConfigs()
+        self.BlockUI(False)
 
     def OnActionSwitchUser(self):
+        self.BlockUI(True)
         ret = QMessageBox.question(self, 'Logoff user',
                                    f"Do you really want to logout from UDemy?\n\nYou must re-start the application and re-login!",
                                    QMessageBox.Yes | QMessageBox.No)
         if ret == QMessageBox.Yes:
             self.SwitchUser(True, self.OnSwitchUserDone)
+        self.BlockUI(False)
 
     def OnActionExit(self):
         self.close()
@@ -171,9 +175,6 @@ class UDemyWebCrawler(QMainWindow):
                 return
         Thread.start()
         self.BlockUI(True)
-        self.ActionCancel.setEnabled(True)
-        self.ActionCombine.setEnabled(False)
-        self.ActionJump2MyCourses.setEnabled(False)
 
     def OnActionCombine(self):
         # Check if FFMPEG is already installed:
@@ -208,8 +209,6 @@ class UDemyWebCrawler(QMainWindow):
                 Thread._signal_done.connect(self.OnSignalCoursesCombined)
                 Thread.start()
                 self.BlockUI(True)
-                self.ActionCancel.setEnabled(True)
-                self.ActionJump2MyCourses.setEnabled(False)
 
     def OnActionCancel(self):
         if not self.ThreadCancelTrigger is None:
@@ -220,9 +219,6 @@ class UDemyWebCrawler(QMainWindow):
                 if ret == QMessageBox.Yes:
                     self.ThreadCancelTrigger()
                     self.ThreadCancelTrigger = None
-                    self.ActionCancel.setEnabled(False)
-                    self.ActionCombine.setEnabled(True)
-                    self.ActionJump2MyCourses.setEnabled(True)
             except Exception as error:
                 pass
 
@@ -255,9 +251,7 @@ class UDemyWebCrawler(QMainWindow):
 
     def OnSignalError(self, message):
         self.ThreadCancelTrigger = None
-        self.ActionCancel.setEnabled(False)
-        self.ActionCombine.setEnabled(True)
-        self.ActionJump2MyCourses.setEnabled(True)
+        self.BlockUI(False)
         self.ResetProgress()
         # Show/Log message
         log.error(message)
@@ -267,9 +261,7 @@ class UDemyWebCrawler(QMainWindow):
 
     def OnSignalCanceled(self):
         self.ThreadCancelTrigger = None
-        self.ActionCancel.setEnabled(False)
-        self.ActionCombine.setEnabled(True)
-        self.ActionJump2MyCourses.setEnabled(True)
+        self.BlockUI(False)
         self.ResetProgress()
         # Reload current page
         self.web.href(self.web.url(), self.OnCoursePageReloaded, self.OnCourseClicked)
@@ -278,9 +270,7 @@ class UDemyWebCrawler(QMainWindow):
 
     def OnSignalCoursesDownloaded(self, courseid, coursename):
         self.ThreadCancelTrigger = None
-        self.ActionCancel.setEnabled(False)
-        self.ActionCombine.setEnabled(True)
-        self.ActionJump2MyCourses.setEnabled(True)
+        self.BlockUI(False)
         self.ResetProgress()
         # Ask user to archive course
         ret = QMessageBox.question(self, 'Finished',
@@ -314,9 +304,7 @@ class UDemyWebCrawler(QMainWindow):
 
     def OnSignalCoursesCombined(self):
         self.ThreadCancelTrigger = None
-        self.ActionCancel.setEnabled(False)
-        self.ActionCombine.setEnabled(True)
-        self.ActionJump2MyCourses.setEnabled(True)
+        self.BlockUI(False)
         self.ResetProgress()
         # Reload current page
         self.web.href(self.web.url(), self.OnCoursePageReloaded, self.OnCourseClicked)
@@ -334,6 +322,14 @@ class UDemyWebCrawler(QMainWindow):
         else:
             self.progressBarLabel.setText(const.PROGRESSBAR_LABEL_DOWNLOAD)
             self.ApplyBlockStyle()
+        # Block all actions but not the canceling
+        self.ActionCancel.setEnabled(block)
+        self.ActionExit.setEnabled(not block)
+        self.ActionSettings.setEnabled(not block)
+        self.ActionCombine.setEnabled(not block)
+        self.ActionJump2MyCourses.setEnabled(not block)
+        self.ActionSwitchUser.setEnabled(not block)
+
 
     def ResetProgress(self):
         self.progressBar.setValue(0)

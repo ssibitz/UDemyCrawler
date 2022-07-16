@@ -57,7 +57,7 @@ class ExtendedCombo(QComboBox):
 class CourseSelection(QDialog):
     def __init__(self, accesstokenvalue):
         super().__init__()
-        self.cfg = settings.Settings()
+        self.cfg = settings.GlobalSettings()
         self.ffmpeg_util = FFMPEGUtil()
         self.access_token_value = accesstokenvalue
         self.overview = overview.Overview(self.access_token_value)
@@ -176,7 +176,7 @@ class FFMPEGThread(QThread):
     def __init__(self, mw, accesstokenvalue, selectedcourse):
         super(FFMPEGThread, self).__init__(mw)
         self.canceled = False
-        self.cfg = settings.Settings()
+        self.cfg = settings.GlobalSettings()
         self.overview = overview.Overview(accesstokenvalue)
         self.ffmpegutil = FFMPEGUtil()
         self.course = selectedcourse
@@ -235,7 +235,7 @@ class FFMPEGThread(QThread):
 
     def run(self):
         # Store original path
-        OriginalPath = const.SingletonPath.getInstance().AppPath()
+        OriginalPath = const.GlobalPaths().AppDataPath()
         try:
             # Get infos from course
             CourseTitle = const.ReplaceSpecialChars(self.course["Title"])

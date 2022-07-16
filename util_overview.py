@@ -16,7 +16,7 @@ from PySide2.QtWidgets import QMessageBox
 
 class Overview():
     def __init__(self, accesstokenvalue):
-        self.cfg = util_settings.Settings()
+        self.cfg = util_settings.GlobalSettings()
         self.access_token_value = accesstokenvalue
 
     def GetTitleFromCourseId(self, CourseId):
