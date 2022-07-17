@@ -25,7 +25,7 @@ FFMPEG_TOOL_PATH = "\\ffmpeg-master-latest-win64-gpl\\bin"
 FFMPEG_TOOL_FILENAME = "ffmpeg.exe"
 FFMPEG_PLAYLIST_NAME = "playlist.txt"
 COURSE_COMBINE_FILENAME_EXT = ".mp4"
-FFMPEG_COMBINE_PARAMS = FFMPEG_TOOL_FILENAME + ' {videoinputs}-filter_complex "[0:v] [0:a] [1:v] [1:a] [2:v] [2:a] concat=n=3:v=1:a=1 [vv] [aa]" -map "[vv]" -map "[aa]" {output}'
+FFMPEG_COMBINE_PARAMS = FFMPEG_TOOL_FILENAME + ' {videoinputs}-filter_complex "{mapping}concat=n={videocount}:v=1:a=1 [vv] [aa]" -map "[vv]" -map "[aa]" {output}'
 
 # Application
 APP_NAME = "UDemyCrawler"

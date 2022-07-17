@@ -191,12 +191,17 @@ class FFMPEGThread(QThread):
         start = time.time()
         VideoCount = len(Videos)
         self._signal_info.emit(f"Start combining videos - Please wait ...")
-        # Build input file names
+        # Build video commands
+        VideoIdx = -1
+        VideoCount = len(Videos)
         VideoInputsFFMPEG = ""
+        VideoMappingsFFMPEG = ""
         for Video in Videos:
+            VideoIdx = VideoIdx + 1
             VideoInputsFFMPEG = VideoInputsFFMPEG + f"-i {Video} "
+            VideoMappingsFFMPEG = VideoMappingsFFMPEG + f"[{VideoIdx}:v] [{VideoIdx}:a] "
         # Build command
-        commandlineparams = const.FFMPEG_COMBINE_PARAMS.format(videoinputs=VideoInputsFFMPEG, output=CombinedFileName)
+        commandlineparams = const.FFMPEG_COMBINE_PARAMS.format(videoinputs=VideoInputsFFMPEG, mapping=VideoMappingsFFMPEG, videocount=VideoCount, output=CombinedFileName)
         cmd = shlex.split(commandlineparams)
         # Set environment to ffmpeg path
         ffmpeg_path = self.ffmpegutil.FFMPEGUtilFullPath()
@@ -205,11 +210,12 @@ class FFMPEGThread(QThread):
         # Start progress
         ff = FfmpegProgress(cmd)
         for progress in ff.run_command_with_progress():
-            VideosProcessed = int(VideoCount/100 * progress)
-            if not progress == 0:
+            ProgressPercent = int(progress/100)
+            VideosProcessed = int((VideoCount/100) * (progress/100))
+            if not VideosProcessed == 0:
                 prstime = self.calcProcessTime(start, VideosProcessed, VideoCount)
                 self._signal_info.emit(f"Combining videos - please wait ...")
-                self._signal_progress.emit(progress, VideosProcessed, VideoCount, CourseTitle, prstime)
+                self._signal_progress.emit(ProgressPercent, VideosProcessed, VideoCount, CourseTitle, prstime)
             else:
                 self._signal_info.emit(f"Start combining videos - Calculating rest time ...")
             if self.canceled:
