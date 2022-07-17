@@ -174,10 +174,14 @@ class FFMPEGThread(QThread):
         self.course = selectedcourse
 
     def calcProcessTime(self, starttime, cur_iter, max_iter):
-        telapsed = time.time() - starttime
-        testimated = (telapsed / cur_iter) * (max_iter)
-        finishtime = starttime + testimated
-        finishtime = dt.datetime.fromtimestamp(finishtime).strftime("%H:%M:%S")  # in time
+        finishtime = "calculating..."
+        try:
+            telapsed = time.time() - starttime
+            testimated = (telapsed / cur_iter) * (max_iter)
+            finishtime = starttime + testimated
+            finishtime = dt.datetime.fromtimestamp(finishtime).strftime("%H:%M:%S")  # in time
+        except Exception as error:
+            pass
         return finishtime
 
     def TriggerCancelDownload(self):
@@ -187,8 +191,12 @@ class FFMPEGThread(QThread):
         start = time.time()
         VideoCount = len(Videos)
         self._signal_info.emit(f"Start combining videos - Please wait ...")
+        # Build input file names
+        VideoInputsFFMPEG = ""
+        for Video in Videos:
+            VideoInputsFFMPEG = VideoInputsFFMPEG + f"-i {Video} "
         # Build command
-        commandlineparams = const.FFMPEG_COMBINE_PARAMS.format(output=CombinedFileName)
+        commandlineparams = const.FFMPEG_COMBINE_PARAMS.format(videoinputs=VideoInputsFFMPEG, output=CombinedFileName)
         cmd = shlex.split(commandlineparams)
         # Set environment to ffmpeg path
         ffmpeg_path = self.ffmpegutil.FFMPEGUtilFullPath()
@@ -200,6 +208,7 @@ class FFMPEGThread(QThread):
             VideosProcessed = int(VideoCount/100 * progress)
             if not progress == 0:
                 prstime = self.calcProcessTime(start, VideosProcessed, VideoCount)
+                self._signal_info.emit(f"Combining videos - please wait ...")
                 self._signal_progress.emit(progress, VideosProcessed, VideoCount, CourseTitle, prstime)
             else:
                 self._signal_info.emit(f"Start combining videos - Calculating rest time ...")
@@ -209,7 +218,6 @@ class FFMPEGThread(QThread):
             self._signal_info.emit(f"Combining all videos of course '{CourseTitle}' finished!")
 
     def CombineVideos(self, CourseTitle, CoursePath):
-        PlaylistFileNameFFMPEG = CoursePath + "/" + const.FFMPEG_PLAYLIST_NAME
         CourseTitle = const.ReplaceSpecialChars(CourseTitle)
         CombinedFileName = f"0000-0000-0000-{CourseTitle}" + const.COURSE_COMBINE_FILENAME_EXT
         CombinedFileNameFull = CoursePath + "/" + CombinedFileName
@@ -227,19 +235,8 @@ class FFMPEGThread(QThread):
         # Sort list by name
         self._signal_info.emit(f"Sorting videos ...")
         Videos_Sorted = sorted(Videos)
-        # Delete old playlist if already exists
-        if os.path.exists(PlaylistFileNameFFMPEG):
-            os.remove(PlaylistFileNameFFMPEG)
-        # Build FFMPEG playlist
-        self._signal_info.emit(f"Building playlist.txt of '{CourseTitle}'")
-        with open(PlaylistFileNameFFMPEG, "a") as playlist:
-            # Append all videos to FFMPEG playlist
-            for Video in Videos_Sorted:
-                playlist.write(f"file '{Video}'\n")
-                if self.canceled:
-                    return
         # Execute FFMPEG and concat all files to one
-        self.ExecuteFFMPEG(Videos, CombinedFileName, CourseTitle)
+        self.ExecuteFFMPEG(Videos_Sorted, CombinedFileName, CourseTitle)
 
 
     def run(self):
