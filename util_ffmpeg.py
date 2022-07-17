@@ -211,7 +211,7 @@ class FFMPEGThread(QThread):
         ff = FfmpegProgress(cmd)
         for progress in ff.run_command_with_progress():
             ProgressPercent = int(progress/100)
-            VideosProcessed = int((VideoCount/100) * (progress/100))
+            VideosProcessed = int(VideoCount * ProgressPercent/100)
             if not VideosProcessed == 0:
                 prstime = self.calcProcessTime(start, VideosProcessed, VideoCount)
                 self._signal_info.emit(f"Combining videos - please wait ...")
