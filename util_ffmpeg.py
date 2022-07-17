@@ -15,7 +15,7 @@ from PySide2.QtCore import QThread, Signal, QSortFilterProxyModel
 from PySide2.QtGui import QIcon, Qt, QStandardItemModel, QStandardItem
 from PySide2.QtWidgets import QDialog, QDialogButtonBox, QVBoxLayout, QFormLayout, QLabel, QComboBox, QCompleter, \
     QMessageBox
-
+from ffmpeg_progress_yield import FfmpegProgress
 
 class ExtendedCombo(QComboBox):
     def __init__(self, parent=None):
@@ -183,6 +183,31 @@ class FFMPEGThread(QThread):
     def TriggerCancelDownload(self):
         self.canceled = True
 
+    def ExecuteFFMPEG(self, Videos, CombinedFileName, CourseTitle):
+        start = time.time()
+        VideoCount = len(Videos)
+        self._signal_info.emit(f"Start combining videos - Please wait ...")
+        # Build command
+        commandlineparams = const.FFMPEG_COMBINE_PARAMS.format(output=CombinedFileName)
+        cmd = shlex.split(commandlineparams)
+        # Set environment to ffmpeg path
+        ffmpeg_path = self.ffmpegutil.FFMPEGUtilFullPath()
+        ffmpeg_env = os.environ.copy()
+        os.environ['PATH'] = ffmpeg_path + ";" + ffmpeg_env["PATH"]
+        # Start progress
+        ff = FfmpegProgress(cmd)
+        for progress in ff.run_command_with_progress():
+            VideosProcessed = int(VideoCount/100 * progress)
+            if not progress == 0:
+                prstime = self.calcProcessTime(start, VideosProcessed, VideoCount)
+                self._signal_progress.emit(progress, VideosProcessed, VideoCount, CourseTitle, prstime)
+            else:
+                self._signal_info.emit(f"Start combining videos - Calculating rest time ...")
+            if self.canceled:
+                break
+        if not self.canceled:
+            self._signal_info.emit(f"Combining all videos of course '{CourseTitle}' finished!")
+
     def CombineVideos(self, CourseTitle, CoursePath):
         PlaylistFileNameFFMPEG = CoursePath + "/" + const.FFMPEG_PLAYLIST_NAME
         CourseTitle = const.ReplaceSpecialChars(CourseTitle)
@@ -213,17 +238,9 @@ class FFMPEGThread(QThread):
                 playlist.write(f"file '{Video}'\n")
                 if self.canceled:
                     return
-        # Execute FFMPEG and concat all files
-        VideoCount = len(Videos)
-        self._signal_info.emit(
-            f"Combining all videos ({VideoCount:04d}) to one - Please wait ...")
-        commandlineparams = const.FFMPEG_COMBINE_PARAMS.format(output=CombinedFileName)
-        ffmpeg_path = self.ffmpegutil.FFMPEGUtilFullPath()
-        ffmpeg_env = os.environ.copy()
-        ffmpeg_env["PATH"] = ffmpeg_path + ";" + ffmpeg_env["PATH"]
-        cmd = shlex.split(commandlineparams)
-        subprocess.call(cmd, env=ffmpeg_env, stdout=subprocess.PIPE, shell=True)
-        self._signal_info.emit(f"Combining all videos of course '{CourseTitle}' finished!")
+        # Execute FFMPEG and concat all files to one
+        self.ExecuteFFMPEG(Videos, CombinedFileName, CourseTitle)
+
 
     def run(self):
         # Store original path

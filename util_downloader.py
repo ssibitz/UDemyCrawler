@@ -523,6 +523,9 @@ class DownloaderThread(QThread):
         Lecture_Download_TYP = Chapter["Lecture_Download_TYP"]
         Lecture_Media_License_Token = Chapter["Lecture_Media_License_Token"]
         self.ResumeOnLastDownload = False
+        # Shorten Chapter title and Lecture title if too long names used:
+        Chapter_Title = Chapter_Title[:25]
+        Lecture_Title = Lecture_Title[:35]
         # Build name for downloading
         filename, DownloadVideoFileExt = os.path.splitext(Lecture_FileName)
         DownloadVideoName = f"{Chapter_Index:04d}-{Lecture_Index:04d}-0000__{self.CourseTitle}__{Chapter_Title}__{Lecture_Title}{DownloadVideoFileExt}"
