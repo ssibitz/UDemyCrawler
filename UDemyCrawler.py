@@ -193,23 +193,19 @@ class UDemyWebCrawler(QMainWindow):
                                                        QtGui.QGuiApplication.screens()[
                                                            self.cfg.StartOnMonitorNumber].availableGeometry(), ), )
         if dlg.exec_():
-            ret = QMessageBox.question(self, 'Combine all course videos',
-                                       f"This could take a long time.\nDo you want to continue?",
-                                       QMessageBox.Yes | QMessageBox.No)
-            if ret == QMessageBox.Yes:
-                # Start combine process:
-                course = dlg.Selected
-                log.info(f"Start combining videos for course ")
-                self.ResetProgress()
-                Thread = ffmpeg.FFMPEGThread(self, self.access_token_value, course)
-                Thread._signal_progress.connect(self.OnSignalProgressChanged)
-                Thread._signal_info.connect(self.OnSignalInfo)
-                Thread._signal_error.connect(self.OnSignalError)
-                Thread._signal_canceled.connect(self.OnSignalCanceled)
-                self.ThreadCancelTrigger = Thread.TriggerCancelDownload
-                Thread._signal_done.connect(self.OnSignalCoursesCombined)
-                Thread.start()
-                self.BlockUI(True)
+            # Start combine process:
+            course = dlg.Selected
+            log.info(f"Start combining videos for course ")
+            self.ResetProgress()
+            Thread = ffmpeg.FFMPEGThread(self, self.access_token_value, course)
+            Thread._signal_progress.connect(self.OnSignalProgressChanged)
+            Thread._signal_info.connect(self.OnSignalInfo)
+            Thread._signal_error.connect(self.OnSignalError)
+            Thread._signal_canceled.connect(self.OnSignalCanceled)
+            self.ThreadCancelTrigger = Thread.TriggerCancelDownload
+            Thread._signal_done.connect(self.OnSignalCoursesCombined)
+            Thread.start()
+            self.BlockUI(True)
 
     def OnActionCancel(self):
         if not self.ThreadCancelTrigger is None:
